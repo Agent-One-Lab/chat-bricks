@@ -1,0 +1,8 @@
+pytest tests/test_qwen3_prompt.py
+pytest tests/test_qwen3_tokenize.py
+
+pytest tests/test_text_templates_full_align.py
+pytest tests/test_text_templates_tokenize.py
+
+pytest tests/test_vision_templates_full_align.py
+pytest tests/test_vision_templates_tokenize.py

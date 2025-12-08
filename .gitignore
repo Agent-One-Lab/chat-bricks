@@ -1,0 +1,8 @@
+*.pyc
+
+*.ipynb
+*.egg-info
+
+*.json
+
+/docs/_build
