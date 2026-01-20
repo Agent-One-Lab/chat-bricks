@@ -18,3 +18,16 @@ classifiers = [
 
 [tool.setuptools]
 packages = ["chat_bricks"]
+package-dir = {"" = "src"}
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocs-git-revision-date-localized-plugin>=1.2",
+    "mkdocs-git-authors-plugin>=0.7",
+    "mkdocs-macros-plugin>=1.2",
+    "mkdocstrings[python]>=0.27",
+    "mkdocs-autorefs>=1.0",
+    "mike>=2.1",
+]

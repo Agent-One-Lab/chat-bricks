@@ -6,3 +6,7 @@
 *.json
 
 /docs/_build
+/site
+/build
+.pytest_cache
+.ipynb_checkpoints

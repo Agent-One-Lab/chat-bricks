@@ -1,4 +1,10 @@
 ```bash
-sphinx-build docs docs/_build/html
-python -m http.server -d docs/_build/html
+# install doc dependencies
+pip install ".[docs]"
+
+# live preview
+mkdocs serve
+
+# build static site
+mkdocs build
 ```
