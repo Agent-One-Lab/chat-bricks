@@ -10,6 +10,7 @@ Chat Bricks is a powerful and flexible template system inspired by building bloc
 - **Modular design**: Templates are built from configurable components.
 - **Multi-modal support**: Built-in vision-language templates.
 - **Jinja template generation**: Automatic HuggingFace-compatible template generation.
+- **HuggingFace Integration**: Directly supports using an HF repo id as template.
 - **Advanced configuration**: Fine-grained control over template behavior.
 
 ## Installation
@@ -18,19 +19,6 @@ Chat Bricks is a powerful and flexible template system inspired by building bloc
 pip install chat-bricks
 ```
 
-## Supported Models
-
-Chat Bricks comes with built-in support for many popular models, including:
-
-- **Qwen**: `qwen2.5`, `qwen2.5-vl`, `qwen3`, `qwen3-vl-instruct`
-- **Llama**: `llama-3.2`
-- **Deepseek**: `deepseek-prover`, `deepseek-r1-distill-qwen`
-- **GLM**: `glm-4`
-- **Phi**: `phi-4`
-- **Nemotron**: `nemotron`
-- **Kimi**: `kimi-k2-instruct`
-
-And more!
 
 ## Quick Start
 
@@ -93,6 +81,36 @@ custom = Template(
 chat = Chat(template=custom, messages=[{"role": "user", "content": "Hi!"}])
 print(chat.render())
 ```
+
+### Using HuggingFace Repo ID as Template
+
+You can directly use any HuggingFace model repository ID as a template. Chat Bricks will automatically load the tokenizer's chat template:
+
+```python
+from chat_bricks import Chat
+
+# Use a HuggingFace repo id directly
+chat = Chat(
+    template="Qwen/Qwen2.5-3B-Instruct",
+    messages=[
+        {"role": "user", "content": "Hello, how are you?"},
+        {"role": "assistant", "content": "I am fine, thank you."}
+    ],
+)
+
+# Render the prompt using the model's native chat template
+prompt = chat.prompt()
+print(prompt)
+prompt_with_mask = chat.prompt_with_mask()
+print(prompt_with_mask)
+
+# Tokenize with proper masking for training
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-3B-Instruct")
+inputs = chat.tokenize(tokenizer, add_generation_prompt=True)
+```
+
+This feature automatically detects if the repo ID is not a built-in template and creates an `HFTemplate` that uses the tokenizer's chat template. It supports tools, generation prompts, and proper masking for training. See the [HuggingFace Templates Guide](docs/how_to_use/huggingface_templates.md) for more details.
 
 ## Documentation
 

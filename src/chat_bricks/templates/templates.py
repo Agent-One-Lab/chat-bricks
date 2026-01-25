@@ -8,8 +8,6 @@ import warnings
 import logging
 import torch
 from transformers import PreTrainedTokenizer
-from ..utils.vision import open_image_from_any
-from ..vision import is_vision_template
 import re
 from typing import Protocol
 from ..policies import (
@@ -275,9 +273,12 @@ class Template:
     
     def supports_vision(self) -> bool:
         """Check if this template supports vision processing"""
+        from ..vision import is_vision_template
         return is_vision_template(self.name)
 
     def get_vision_inputs(self, messages: List[Dict]):
+        from ..utils.vision import open_image_from_any
+
         vision_inputs = defaultdict(list)
         logger.debug(f"[Template] get_vision_inputs: messages: {messages}")
         for message in messages:
@@ -376,10 +377,13 @@ class Qwen3Template(Template):
 class HFTemplate(Template):
     """
     A general template that uses Hugging Face tokenizer's chat template.
-    It aims to work for most HF's tokenizer's chat template.
+    It aims to work for most HF's tokenizer's chat template and supports masking by applying chat template iteratively to 
+    increasing turns of messages. This method only works for chat template that directly append elements when geting more
+    turns of messages. It does not work for chat template that will modify the previous prompt of content (e.g. Qwen3's 
+    template which deletes the previous thinking content).
     """
     def __init__(self, name: str):
-        super().__init__(name)
+        super().__init__(name=name)
         self.tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
         if self.tokenizer.chat_template is None:
             raise ValueError(f"Tokenizer from {name} does not have a chat_template. Cannot use HFTemplate.")
@@ -418,9 +422,6 @@ class HFTemplate(Template):
             inputs: Dictionary with input_ids, attention_mask, labels, and action_mask
         """
         # Use self.tokenizer if provided tokenizer is different (for compatibility)
-        if tokenizer is not self.tokenizer:
-            logger.warning(f"Using template's tokenizer ({self.tokenizer}) instead of provided tokenizer")
-        
         tokenizer_to_use = self.tokenizer
         
         # Reuse render() to get elements and mask_flags (same as base Template)
@@ -464,6 +465,9 @@ class HFTemplate(Template):
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
         
         return inputs
+
+    def jinja_template(self) -> str:
+        return self.tokenizer.chat_template
 
 if __name__ == "__main__":
     pass

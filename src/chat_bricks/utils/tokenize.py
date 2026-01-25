@@ -1,6 +1,7 @@
 import torch
 import re
 import logging
+from ..registry import get_template
 
 LOGGER = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def tokenize_conversation(
     tools=None,
     processor=None,
     return_tensors="pt",
-    add_generation_prompt=False,
+    ignore_tool_calls=False,
     **kwargs, # Additional kwargs for the chat template, e.g. enable_thinking
 ):
     """
@@ -79,15 +80,23 @@ def tokenize_conversation(
         attention_mask
         labels: should be -100 for user prompt and input id for model's response
         action_mask: should be 0 for user prompt and 1 for model's response
-    :param messages:
-    :param tokenizer:
-    :param conv_template:
-    :param max_length:
-    :return: input_ids, attention_mask, labels, action_mask
+    
+    Args:
+        messages: The list of messages
+        tokenizer: The tokenizer
+        template: The template
+        max_length: The maximum length of the input
+        tools: The tools
+        processor: The processor
+        return_tensors: The return tensors
+        **kwargs: Additional kwargs for the chat template, e.g. enable_thinking
+
+    Returns:
+        inputs: The dictionary of input ids, attention mask, labels, and action mask
     """
     from .. import Chat
-    chat = Chat(template=template, messages=messages, tokenizer=tokenizer)
-    inputs = chat.tokenize(tokenizer, add_generation_prompt=add_generation_prompt, tools=tools, processor=processor, **kwargs)
+    chat = Chat(template=template, messages=messages, tokenizer=tokenizer, ignore_tool_calls=ignore_tool_calls)
+    inputs = chat.tokenize(tokenizer, tools=tools, processor=processor, **kwargs)
     
     if max_length is not None:
         inputs['input_ids'] = inputs['input_ids'][:, :max_length]
@@ -109,9 +118,10 @@ def tokenize_conversations(
     processor=None,
     return_tensors="pt",
     return_reward_mask=False,
-    add_generation_prompt=False,
     padding_side="right",
-    concatenate_mm_inputs=False
+    concatenate_mm_inputs=False,
+    ignore_tool_calls=False,
+    **kwargs,
 ):
     batch_input_ids = []
     batch_attention_masks = []
@@ -119,8 +129,19 @@ def tokenize_conversations(
     batch_action_masks = []
     batch_mm_inputs = []
     # TODO: add multiprocessing
+    template = get_template(template)
+    
     for messages in messages_list:
-        inputs = tokenize_conversation(messages, tokenizer, template, max_length, processor=processor, add_generation_prompt=add_generation_prompt)
+        inputs = tokenize_conversation(
+            messages=messages,
+            tokenizer=tokenizer,
+            template=template,
+            max_length=max_length,
+            processor=processor,
+            return_tensors=return_tensors,
+            ignore_tool_calls=ignore_tool_calls,
+            **kwargs
+        )
         batch_input_ids.append(inputs['input_ids'].squeeze(0))
         batch_attention_masks.append(inputs['attention_mask'].squeeze(0))
         batch_labels.append(inputs['labels'].squeeze(0))

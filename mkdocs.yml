@@ -35,6 +35,7 @@ nav:
     - Core Components: chat_bricks/core_components.md
   - How to use Chat Bricks:
     - Usage Guide: how_to_use/basic_usage.md
+    - HuggingFace Templates: how_to_use/huggingface_templates.md
     - Custom Templates: how_to_use/custom_templates.md
     - Advanced Features: how_to_use/advanced_features.md
     - Vision Templates: how_to_use/vision_templates.md

@@ -1,11 +1,12 @@
 from typing import List, Dict, Union, Any
-from .templates import HFTemplate
+from .templates import HFTemplate, Template
 from .registry import get_template
+from .utils import is_vision_lm
 from transformers import PreTrainedTokenizer
 import copy
 
 class Chat:
-    def __init__(self, template: str, messages: List[List[str]]=None, tools=None, tokenizer: PreTrainedTokenizer = None):
+    def __init__(self, template: str | Template | HFTemplate, messages: List[List[str]]=None, tools=None, tokenizer: PreTrainedTokenizer = None, ignore_tool_calls: bool = False):
         """
         Args:
             template: The name of the template to use.
@@ -13,8 +14,21 @@ class Chat:
             tools: The tools to use for the chat.
             tokenizer: The tokenizer to use for the chat.
         """
-        self.template = get_template(template)
-        self.messages = self.convert_to_hf_format_messages(messages)
+        if isinstance(template, str):
+            self.template = get_template(template)
+        else:
+            self.template = template
+
+        # Default to use vision template because we use vision format messages by default
+        # If we use HF template, we need to check if the model is a vision language model
+        # Because the hf tokenizer expects textual model message format.
+        if isinstance(self.template, HFTemplate):
+            self.is_vision_template = is_vision_lm(self.template.name)
+        else:
+            self.is_vision_template = True
+
+        self.ignore_tool_calls = ignore_tool_calls
+        self.messages = self.preprocess_messages(messages)
         self.tokenizer = tokenizer
         self.tools = tools
         self.flags = {}
@@ -28,28 +42,49 @@ class Chat:
         else:
             raise ValueError(f"Cannot find role label and content label in the data.")
 
-    
-    def _convert_single_message_to_hf_format(self, message: Dict) -> Dict:
-        message = copy.deepcopy(message)
-        if isinstance(self.template, HFTemplate):
-            # For HFTemplate, we use original message format
-            return message
-        if isinstance(message['content'], str):
-            message['content'] = [{"type": "text", "content": message['content']}]
-        elif isinstance(message['content'], list):
-            for item in message['content']:
-                if item['type'] == 'text':
+    def preprocess_messages(self, messages: List[Dict]) -> List[Dict]:
+        """
+        Preprocess the messages for the chat. Since we don't change message content, we don't copy it here.
+        """
+
+        processed_messages = []
+
+        for message in messages:
+            for k, v in message.items():
+                if k == 'tool_calls' and self.ignore_tool_calls:
                     continue
-                elif item['type'] in ["image", "image_url"]:
-                    pass
-                else:
-                    raise ValueError(f"Invalid message type: {item['type']}")
-                
+                message[k] = v
+            processed_messages.append(message)
+        
+        processed_messages = self.convert_to_hf_format_messages(processed_messages)
+
+        return processed_messages
+
+    
+    def _convert_single_message_to_hf_format(self, message: Dict) -> Dict:        
+        if isinstance(message['content'], str):
+            # Convert to vision format is we use defined template or HF's vision template.
+            if self.is_vision_template:
+                message['content'] = [{"type": "text", "content": message['content']}]
+        elif isinstance(message['content'], list):
+            if self.is_vision_template:
+                for item in message['content']:
+                    if item['type'] == 'text':
+                        continue
+                    elif item['type'] in ["image", "image_url"]:
+                        pass
+                    else:
+                        raise ValueError(f"Invalid message type: {item['type']}")
+            else:
+                if len(message['content']) == 1 and message['content'][0]['type'] == 'text':
+                    message['content'] = message['content'][0]['text']
 
     def convert_to_hf_format_messages(self, messages: Union[List[Dict], Dict[str, List[Dict]]]) -> List[Dict]:
         hf_messages = []
+
         if messages is None:
             return None
+        
         role_label, content_label = self._detect_labels(messages)
         for message in messages:
             hf_message = {"role": message[role_label], "content": message[content_label]}
@@ -124,6 +159,7 @@ class Chat:
 
         if tools is None:
             tools = self.tools
+
         return self.template.encode(messages=self.messages, tokenizer=tokenizer, return_tensors="pt", tools=tools, add_generation_prompt=add_generation_prompt, processor=processor, **kwargs)
 
     def append(self, message: Union[Dict]):

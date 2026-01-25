@@ -8,6 +8,7 @@ import requests
 from typing import Union
 import os
 from typing import Optional
+from transformers import AutoConfig
 
 def open_image_from_any(src: str | Image.Image, *, timeout: int = 10) -> Image.Image:
     """
@@ -243,3 +244,34 @@ def display_messages(messages: List[Dict]):
         if "tool_calls" in message:
             print("Tool calls: ", end="")
             print(message["tool_calls"])
+
+
+def is_vlm_by_config(cfg):
+    keywords = [
+        "vision", "image", "mm_", "patch", "pixel",
+        "visual", "clip", "vit"
+    ]
+    return any(k in cfg.to_dict().keys() for k in keywords)
+
+# Cache for is_vision_lm results to avoid repeated config loading
+_VISION_LM_CACHE: Dict[str, bool] = {}
+
+def is_vision_lm(model_name: str) -> bool:
+    """
+    Check if a model is a vision language model. Currently only check with the model's config
+    Results are cached to avoid repeated config loading.
+
+    Args:
+        model_name: The name of the model.
+
+    Returns:
+        True if the model is a vision language model, False otherwise.
+    """
+    if model_name in _VISION_LM_CACHE:
+        return _VISION_LM_CACHE[model_name]
+    
+    config = AutoConfig.from_pretrained(model_name)
+    result = is_vlm_by_config(config)
+    _VISION_LM_CACHE[model_name] = result
+    return result
+

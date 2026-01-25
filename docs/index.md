@@ -10,6 +10,7 @@ Chat Bricks is a powerful and flexible template system inspired by building bloc
 - **Modular design**: Templates are built from configurable components.
 - **Multi-modal support**: Vision-language templates are built in.
 - **Jinja template generation**: Automatic HuggingFace-compatible template generation.
+- **HuggingFace Integration**: Directly supports using an HF repo id as template.
 - **Advanced configuration**: Fine-grained control over template behavior.
 
 ## Quickstart
@@ -34,5 +35,5 @@ print(prompt)
 
 | WeChat | Discord |
 | :---: | :---: |
-| <img src="https://agent-one-lab.github.io/assets/agentfly/wechat.jpg" width="200" /> <br> Scan to join wechat group | <img src="https://agent-one-lab.github.io/assets/agentfly/wechat.jpg" width="200" /> <br> Join our discord channel |
+| <img src="https://agent-one-lab.github.io/assets/agentfly/wechat.jpg" width="200" /> <br> Scan to join wechat group | <img src="https://agent-one-lab.github.io/assets/agentfly/discord.png" width="200" /> <br> [Join our discord channel](https://discord.gg/Ze5Z9QhhJ3) |
 

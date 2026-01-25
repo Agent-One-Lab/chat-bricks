@@ -16,6 +16,10 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 
+dependencies=[
+    "transformers"
+]
+
 [tool.setuptools]
 packages = ["chat_bricks"]
 package-dir = {"" = "src"}

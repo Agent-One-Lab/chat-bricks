@@ -10,16 +10,16 @@
 :root,
 [data-md-color-scheme="default"] {
     /* Main primary color - used for header, navigation bar, and primary UI elements */
-    --md-primary-fg-color: #815ac0 !important;
+    --md-primary-fg-color: #0096c7 !important;
 
     /* Lighter variant of primary color - used for hover states and highlights */
-    --md-primary-fg-color--light: #a06cd5 !important;
+    --md-primary-fg-color--light: #48cae4 !important;
 
     /* Darker variant of primary color - used for pressed/active states */
-    --md-primary-fg-color--dark: #6247aa !important;
+    --md-primary-fg-color--dark: #0077b6 !important;
 
     /* Accent color - used for links, buttons, and interactive elements */
-    --md-accent-fg-color: #564592 !important;
+    --md-accent-fg-color: #023e8a !important;
 
     /* Transparent version of accent color - used for backgrounds and subtle highlights */
     --md-accent-fg-color--transparent: rgba(199, 125, 255, 0.1) !important;

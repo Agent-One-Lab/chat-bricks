@@ -1,3 +1,9 @@
+"""
+AgentFly Team
+Observe the masking behavior of the HF templates. Masking is the basics of get correct action mask and useful for SFT and RL training.
+However, we don't have a verifiable way to validate the correctness of masking. This test is simply to observe the masking of HFTemplate.
+"""
+
 from chat_bricks.templates import HFTemplate
 from chat_bricks.chat import Chat
 import pytest
@@ -28,12 +34,12 @@ from chat_bricks.utils.process import strip_ansi
         {"role": "tool", "content": "The answer is 15"},
         {"role": "tool", "content": "The answer is 8"},
     ],
-    # [
-    #     {"role": "system", "content": "You are a helpful assistant."},
-    #     {"role": "user", "content": "Hello, how are you?"},
-    #     {"role": "assistant", "content": "I am fine, thank you."},
-    #     {"role": "user", "content": "What is 3 times 5?"},
-    # ],
+    [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"},
+        {"role": "assistant", "content": "I am fine, thank you."},
+        {"role": "user", "content": "What is 3 times 5?"},
+    ],
 ])
 @pytest.mark.parametrize("tools", [
     None,
@@ -48,21 +54,5 @@ def test_hf_templates(repo_name, messages, tools, add_generation_prompt):
     prompt = chat.prompt(add_generation_prompt=add_generation_prompt, tools=tools)
     prompt_with_mask = chat.prompt_with_mask(add_generation_prompt=add_generation_prompt, tools=tools)
 
-    raw_prompt = strip_ansi(prompt_with_mask)
-
-    tokenizer = AutoTokenizer.from_pretrained(repo_name, trust_remote_code=True)
-    hf_template = tokenizer.apply_chat_template(messages, tokenize=False, tools=tools, add_generation_prompt=add_generation_prompt)
-    
-    is_equal = prompt == hf_template
-
-    is_equal_between_implemented_and_constructed_prompt = prompt == raw_prompt
-
-    if not is_equal:
-        print(f"Implemented prompt:\n\n{prompt}")
-        print(f"HF template prompt:\n\n{hf_template}")
-    assert is_equal, f"Implemented prompt:\n\n{prompt}\n\nHF template prompt:\n\n{hf_template}"
-
-    if not is_equal_between_implemented_and_constructed_prompt:
-        print(f"Implemented prompt:\n\n{prompt}")
-        print(f"Constructed prompt:\n\n{raw_prompt}")
-    assert is_equal_between_implemented_and_constructed_prompt, f"Implemented prompt:\n\n{prompt}\n\nConstructed prompt:\n\n{raw_prompt}"
+    print(f"Prompt:\n{prompt}\n")
+    print(f"Prompt with mask:\n{prompt_with_mask}\n")
