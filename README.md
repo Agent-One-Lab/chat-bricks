@@ -1,4 +1,5 @@
 # 🧩 Chat Bricks
+<a href="https://chat-bricks.readthedocs.io/" target="_blank"><img alt="Static Badge" src="https://img.shields.io/badge/DOC-ChatBricks-%23ffc8dd?style=for-the-badge&logo=readthedocs"></a>
 
 *Jinja Template is Not You Need!*
 
