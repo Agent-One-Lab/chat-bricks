@@ -29,6 +29,8 @@ The system comes with several pre-built templates:
 `Template` is the basic template class, consists of different components and responsible for forming the prompt. While `Chat` is the class we recommand for users to obtain prompts.
 
 ```python
+from chat_bricks import get_template, Chat
+
 # Get a pre-built template
 template = get_template("qwen2.5")
 

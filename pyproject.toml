@@ -21,8 +21,10 @@ dependencies=[
 ]
 
 [tool.setuptools]
-packages = ["chat_bricks"]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.optional-dependencies]
 docs = [

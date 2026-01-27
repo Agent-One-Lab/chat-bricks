@@ -5,7 +5,28 @@
 ## Minimal Example
 ```python
 from chat_bricks import Chat, get_template
-from chat_bricks.utils.tokenize import VisionProcessor
+from transformers import AutoTokenizer
+
+tools = [{
+    "type": "function",
+    "name": "get_weather",
+    "description": "Retrieves current weather for the given location.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "City and country e.g. Bogotá, Colombia"
+            },
+            "units": {
+                "type": "string",
+                "enum": ["celsius", "fahrenheit"],
+                "description": "Units the temperature will be returned in."
+            }
+        },
+        "required": ["location", "units"]
+    }
+}]
 
 chat = Chat(
     template="qwen3",
@@ -13,12 +34,13 @@ chat = Chat(
 )
 
 # Render prompt text
-prompt = chat.render()
+prompt = chat.prompt(tools=tools)
+print(prompt)
 
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
 # Tokenize for training or inference
 inputs = chat.tokenize(
     tokenizer,
-    processor=processor,          # required for vision models
     add_generation_prompt=True,   # keep generation token for inference
     tools=tools                   # optional tool definitions
 )

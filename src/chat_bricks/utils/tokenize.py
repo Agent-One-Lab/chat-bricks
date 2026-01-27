@@ -5,7 +5,6 @@ import torch
 from ..registry import get_template
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def transform_multi_turn_reward_mask(action_mask):

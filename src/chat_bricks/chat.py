@@ -8,7 +8,6 @@ from .templates import HFTemplate, Template
 from .utils import is_vision_lm
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Chat:
@@ -42,7 +41,7 @@ class Chat:
 
         self.ignore_tool_calls = ignore_tool_calls
         self.messages = self.preprocess_messages(messages)
-        logger.info(f"[chat-bricks/Chat] Messages: {self.messages}")
+        logger.debug(f"[chat-bricks/Chat] Messages: {self.messages}")
         self.tokenizer = tokenizer
         self.tools = tools
         self.flags = {}
@@ -78,7 +77,7 @@ class Chat:
         if isinstance(message["content"], str):
             # Convert to vision format is we use defined template or HF's vision template.
             if self.is_vision_template:
-                message["content"] = [{"type": "text", "content": message["content"]}]
+                message["content"] = [{"type": "text", "text": message["content"]}]
         elif isinstance(message["content"], list):
             if self.is_vision_template:
                 for item in message["content"]:

@@ -39,7 +39,7 @@ chat = Chat(
 )
 
 # Render the final prompt
-prompt = chat.render()
+prompt = chat.prompt()
 print(prompt)
 ```
 
@@ -79,7 +79,7 @@ custom = Template(
 )
 
 chat = Chat(template=custom, messages=[{"role": "user", "content": "Hi!"}])
-print(chat.render())
+print(chat.prompt())
 ```
 
 ### Using HuggingFace Repo ID as Template

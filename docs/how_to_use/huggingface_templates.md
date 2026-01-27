@@ -281,7 +281,7 @@ If a tokenizer doesn't have a chat template, an error will be raised:
 ```python
 try:
     hf_template = HFTemplate("some-model-without-chat-template")
-except ValueError as e:
+except Exception as e:
     print(f"Error: {e}")
     # Error: Tokenizer from some-model-without-chat-template does not have a chat_template.
 ```

@@ -65,7 +65,7 @@ yaml_formatter = YamlFormatter()
 #### Custom Formatters
 
 ```python
-from chat_bricks import ToolFormatter
+from chat_bricks import ToolFormatter, ToolPolicy, ToolPlacement
 
 class CustomToolFormatter(ToolFormatter):
     def format(self, tools):
@@ -101,7 +101,7 @@ custom_tool_policy = ToolPolicy(
 Process tool content before formatting:
 
 ```python
-from chat_bricks import ToolContentProcessor
+from chat_bricks import ToolContentProcessor, ToolPolicy, ToolPlacement, JsonIndentedFormatter
 
 class ToolFilterProcessor(ToolContentProcessor):
     """Filter tools based on certain criteria"""
@@ -183,7 +183,7 @@ llama_date_policy = SystemPolicy(
 #### Custom Content Processors
 
 ```python
-from chat_bricks import SystemContentProcessor
+from chat_bricks import SystemContentProcessor, SystemPolicy
 
 class EnvironmentAwareProcessor(SystemContentProcessor):
     """Add environment information to system messages"""
@@ -229,15 +229,6 @@ from chat_bricks import GlobalPolicy
 
 # Add prefix to all prompts
 prefix_policy = GlobalPolicy(prefix="<|begin_of_text|>")
-
-# Add suffix to all prompts
-suffix_policy = GlobalPolicy(suffix="<|end_of_text|>")
-
-# Multiple global settings
-comprehensive_policy = GlobalPolicy(
-    prefix="<|begin_of_text|>",
-    suffix="<|end_of_text|>"
-)
 ```
 
 ## Advanced Template Features
@@ -301,6 +292,7 @@ full_template = create_dynamic_template("full", ["tools", "vision"])
 ### Combining Policies
 
 ```python
+from chat_bricks import ToolPolicy, ToolPlacement, JsonIndentedFormatter
 # Create a base tool policy
 base_tool_policy = ToolPolicy(
     placement=ToolPlacement.SYSTEM,
@@ -350,6 +342,8 @@ specialized_template = Template(
 ### Tool Validation
 
 ```python
+from chat_bricks import ToolPolicy, ToolPlacement, JsonFormatter
+
 class ToolValidator:
     """Validate tool definitions"""
 

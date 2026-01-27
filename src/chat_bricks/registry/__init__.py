@@ -23,6 +23,9 @@ def get_template(name: str) -> Template:
         return HFTemplate(name)
 
 
+# Register built-in templates on import so get_template can find them.
+from . import builtin  # noqa: F401, E402
+
 __all__ = [
     "register_template",
     "get_template",
