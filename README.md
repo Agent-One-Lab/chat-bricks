@@ -1,6 +1,6 @@
 # 🧩 Chat Bricks
 
-**Jinja Template is Not What You Need!**
+*Jinja Template is Not You Need!*
 
 Chat Bricks is a powerful and flexible template system inspired by building block toys, designed to support various LLM and VLM chat templates for training and inference.
 
