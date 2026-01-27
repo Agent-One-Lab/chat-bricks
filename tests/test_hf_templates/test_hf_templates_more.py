@@ -52,7 +52,7 @@ def test_hf_templates(repo_name, messages, tools, add_generation_prompt):
 
     tokenizer = AutoTokenizer.from_pretrained(repo_name, trust_remote_code=True)
     hf_template = tokenizer.apply_chat_template(messages, tokenize=False, tools=tools, add_generation_prompt=add_generation_prompt)
-    
+
     is_equal = prompt == hf_template
 
     is_equal_between_implemented_and_constructed_prompt = prompt == raw_prompt

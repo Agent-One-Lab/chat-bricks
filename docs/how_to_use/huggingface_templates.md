@@ -313,4 +313,3 @@ If masking doesn't work as expected:
 - Check if the template modifies previous content (not supported)
 - Verify the template format with `prompt_with_mask()`
 - Consider using a built-in template if available
-

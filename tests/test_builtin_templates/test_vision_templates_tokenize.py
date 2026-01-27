@@ -118,20 +118,20 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt):
     print(f"Official inputs: {official_inputs}")
 
     implemented_inputs = tokenize_conversation(messages, tokenizer, template, max_length=32768, tools=tools, add_generation_prompt=add_generation_prompt, return_tensors="pt", processor=processor)
-    
+
     official_prompt = tokenizer.decode(official_inputs['input_ids'][0])
     implemented_prompt = tokenizer.decode(implemented_inputs['input_ids'][0])
     # print(f"Official prompt image tokens: {official_prompt.count('<|image_pad|>')}\nImplemented prompt image tokens: {implemented_prompt.count('<|image_pad|>')}")
     # print(f"Official images: {official_inputs['pixel_values'].shape}\nImplemented images: {implemented_inputs['pixel_values'].shape}")
 
-    assert torch.equal(official_inputs["input_ids"], implemented_inputs["input_ids"]), f"""Offical 
+    assert torch.equal(official_inputs["input_ids"], implemented_inputs["input_ids"]), f"""Offical
     prompt:\n{official_prompt}\nImplemented prompt:\n{implemented_prompt}"""
-    
+
     assert torch.equal(official_inputs["pixel_values"], implemented_inputs["pixel_values"]), f"""Official pixel values: {official_inputs["pixel_values"].shape} dtype: {official_inputs["pixel_values"].dtype}\nImplemented pixel values: {implemented_inputs["pixel_values"].shape} dtype: {implemented_inputs["pixel_values"].dtype}\n\nvalues: {official_inputs["pixel_values"]}\n{implemented_inputs["pixel_values"]}"""
 
     assert torch.equal(official_inputs["image_grid_thw"], implemented_inputs["image_grid_thw"]), f"""Official image grid thw: {official_inputs["image_grid_thw"]}\nImplemented image grid thw: {implemented_inputs["image_grid_thw"]}"""
 
     assert implemented_inputs["input_ids"].shape == implemented_inputs["action_mask"].shape, f"""Official action mask shape: {official_inputs["action_mask"].shape}\nImplemented action mask shape: {implemented_inputs["action_mask"].shape}"""
 
-    
+
     print(f"official_prompt: {official_prompt}\nimplemented_prompt: {tokenizer.decode(implemented_inputs['input_ids'][0])}\nofficial_inputs: {official_inputs.keys()}\nimplemented_inputs: {implemented_inputs.keys()}\n")

@@ -1,7 +1,11 @@
-from typing import List
 import logging
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from .templates import Template
 
 logger = logging.getLogger(__name__)
+
 
 class JinjaGenerator:
     def __init__(self, template: "Template"):
@@ -40,13 +44,14 @@ class JinjaGenerator:
         parts.extend(self._jinja_generation_block())
 
         template_str = "".join(parts)
-        
+
         # Post-process: Replace __CURRENT_DATE__ placeholder with actual date
         if "__CURRENT_DATE__" in template_str:
             from datetime import datetime
-            current_date = datetime.now().strftime('%d %b %Y')
+
+            current_date = datetime.now().strftime("%d %b %Y")
             template_str = template_str.replace("__CURRENT_DATE__", current_date)
-        
+
         return template_str
 
     # ------------------------------------------------------------------
@@ -59,13 +64,21 @@ class JinjaGenerator:
         # Compute default system message considering content processor
         if self.template.system_policy.content_processor is not None:
             # Apply content processor to system message
-            processed_system_message = self.template.system_policy.content_processor(self.template.system_message, tools=None) # TODO: tools is not used here, but we need to pass it for consistency
-            default_system = self.template.system_template.format(system_message=processed_system_message)
+            processed_system_message = self.template.system_policy.content_processor(
+                self.template.system_message, tools=None
+            )  # TODO: tools is not used here, but we need to pass it for consistency
+            default_system = self.template.system_template.format(
+                system_message=processed_system_message
+            )
         else:
-            default_system = self.template.system_template.format(system_message=self.template.system_message)
+            default_system = self.template.system_template.format(
+                system_message=self.template.system_message
+            )
 
         system_template_with_tools_raw = (
-            self.template.system_template_with_tools if self.template.system_template_with_tools else None
+            self.template.system_template_with_tools
+            if self.template.system_template_with_tools
+            else None
         )
 
         # Split templates
@@ -83,19 +96,35 @@ class JinjaGenerator:
             elif "{observation}" in self.template.tool_template:
                 t_pref, t_suff = self.template.tool_template.split("{observation}")
             else:
-                raise ValueError(f"Invalid tool template: {self.template.tool_template}")
+                raise ValueError(
+                    f"Invalid tool template: {self.template.tool_template}"
+                )
         else:
             t_pref, t_suff = "", ""
 
         # Tokens for images / videos
-        img_tok = (self.template.vision_start or "") + (self.template.image_token or "") + (self.template.vision_end or "")
-        vid_tok = (self.template.vision_start or "") + (self.template.video_token or "") + (self.template.vision_end or "")
+        img_tok = (
+            (self.template.vision_start or "")
+            + (self.template.image_token or "")
+            + (self.template.vision_end or "")
+        )
+        vid_tok = (
+            (self.template.vision_start or "")
+            + (self.template.video_token or "")
+            + (self.template.vision_end or "")
+        )
 
         # Check if assistant template supports tool calls
-        supports_tool_calls_in_template = "{tool_calls}" in self.template.assistant_template
-        
+        supports_tool_calls_in_template = (
+            "{tool_calls}" in self.template.assistant_template
+        )
+
         # Check if tool template uses observations (plural) or observation (singular)
-        uses_observations = "{observations}" in self.template.tool_template if self.template.tool_template else False
+        uses_observations = (
+            "{observations}" in self.template.tool_template
+            if self.template.tool_template
+            else False
+        )
 
         header = [
             f"{{% set _user_pref  = {u_pref!r} %}}",
@@ -114,32 +143,28 @@ class JinjaGenerator:
             f"{{% set _supports_tool_calls = {supports_tool_calls_in_template} %}}",
             f"{{% set _uses_observations = {uses_observations} %}}",
         ]
-        
+
         if self.template.tool_template:
             header.append(
                 f"{{% set _tool_template = {self.template.tool_template!r} %}}"
             )
         else:
-            header.append(
-                "{% set _tool_template = '' %}"
-            )
-        
+            header.append("{% set _tool_template = '' %}")
+
         # Add tool_call_template if it exists
         if self.template.tool_call_template:
             header.append(
                 f"{{% set _tool_call_template = {self.template.tool_call_template!r} %}}"
             )
-        
+
         # Add tool_calls_template if it exists
         if self.template.tool_calls_template:
             header.append(
                 f"{{% set _tool_calls_template = {self.template.tool_calls_template!r} %}}"
             )
         else:
-            header.append(
-                "{% set _tool_calls_template = None %}"
-            )
-        
+            header.append("{% set _tool_calls_template = None %}")
+
         # Add tool_observation_template if it exists
         if self.template.tool_observation_template:
             header.append(
@@ -152,9 +177,7 @@ class JinjaGenerator:
                 f"{{% set _generation_prompt = {self.template.generation_prompt!r} %}}"
             )
         else:
-            header.append(
-                "{% set _generation_prompt = None %}"
-            )
+            header.append("{% set _generation_prompt = None %}")
 
         if system_template_with_tools_raw:
             header.append(
@@ -164,7 +187,9 @@ class JinjaGenerator:
         # Add user template with tools if it exists
         if self.template.user_template_with_tools:
             # Convert double braces to single braces for Jinja compatibility
-            processed_template = self.template.user_template_with_tools.replace('{{', '{').replace('}}', '}')
+            processed_template = self.template.user_template_with_tools.replace(
+                "{{", "{"
+            ).replace("}}", "}")
             header.append(
                 f"{{% set _user_template_with_tools = {processed_template!r} %}}"
             )
@@ -196,7 +221,7 @@ class JinjaGenerator:
         if self.template.system_policy.content_processor is not None:
             # Build a Jinja macro that reproduces the system content processor behaviour
             processor_snippet = self.template.system_policy.content_processor.jinja()
-            
+
             # The snippet should be a template that expects 'system_message' variable
             # We create a macro that can be called with the system message
             header.extend(
@@ -214,7 +239,7 @@ class JinjaGenerator:
         if self.template.assistant_policy.content_processor is not None:
             # Build a Jinja macro that reproduces the assistant content processor behaviour
             processor_snippet = self.template.assistant_policy.content_processor.jinja()
-            
+
             # The snippet should be a template that expects 'content' variable
             # We create a macro that can be called with the assistant content
             header.extend(
@@ -231,8 +256,10 @@ class JinjaGenerator:
 
         if self.template.tool_policy.tool_call_content_processor is not None:
             # Build a Jinja macro that reproduces the tool call content processor behaviour
-            processor_snippet = self.template.tool_policy.tool_call_content_processor.jinja()
-            
+            processor_snippet = (
+                self.template.tool_policy.tool_call_content_processor.jinja()
+            )
+
             # The snippet should be a template that expects 'tool' variable
             # We create a macro that can be called with the tool call
             header.extend(

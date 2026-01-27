@@ -40,11 +40,11 @@ def test_chat_template_equal(template_name, messages, tools, add_generation_prom
     template = get_template(template_name)
     if tools and not template._supports_tool_call():
         return
-    
+
     contain_tool_role = any(message['role'] == 'tool' for message in messages)
     if contain_tool_role and not template._supports_tool_call():
         return
-    
+
     template_tokenizer_mapping = {
         "qwen2.5": "Qwen/Qwen2.5-3B-Instruct",
         "qwen2.5-think": "Qwen/Qwen2.5-3B-Instruct",
@@ -61,7 +61,7 @@ def test_chat_template_equal(template_name, messages, tools, add_generation_prom
     tokenizer = AutoTokenizer.from_pretrained(template_tokenizer_mapping[template_name], trust_remote_code=True)
 
     is_equal, is_equal_between_implemented_prompts, is_equal_between_jinja_prompts, official_prompt, implemented_prompt, implemented_jinja_prompt, highlighted_prompt = compare_hf_template(tokenizer, template_name, messages=messages, tools=tools,add_generation_prompt=add_generation_prompt)
-    
+
     print(f"Official prompt:\n\n\"{official_prompt}\"\n\n")
     print(f"Implemented prompt:\n\n\"{implemented_prompt}\"\n\n")
     assert is_equal, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nOfficial prompt:\n\n{official_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}"

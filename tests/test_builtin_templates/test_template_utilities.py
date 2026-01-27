@@ -27,7 +27,3 @@ def test_template_registration_with_vision():
     )
     assert get_processor("test-vl") is not None
     assert get_processor("test-vl").config.image_token == "<|image_pad|>"
-
-
-
-    

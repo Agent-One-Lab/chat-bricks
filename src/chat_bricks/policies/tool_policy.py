@@ -1,10 +1,11 @@
-from typing import List, Dict, Tuple
-import json
-from typing import Callable, Any  # Added for content processor typing
-from abc import ABC, abstractmethod
 import dataclasses
+import json
+from abc import ABC, abstractmethod
+from typing import Dict  # Added for content processor typing
+from typing import Any, Callable, List, Tuple
 
 from ..constants import ToolPlacement
+
 
 # Convert ToolFormatter into an abstract base class
 class ToolFormatter(ABC):
@@ -12,6 +13,7 @@ class ToolFormatter(ABC):
     Strategy that converts an in-memory list[dict] describing tools
     into the textual representation expected by the target model.
     """
+
     @abstractmethod
     def format(self, tools: List[Dict]) -> str:
         """Format a list of tool dictionaries into a string representation."""
@@ -27,6 +29,7 @@ class ToolContentProcessor(ABC):
     """
     Strategy that processes the content of a tool before it is serialized.
     """
+
     @abstractmethod
     def __call__(self, tool: Dict) -> Dict:
         raise NotImplementedError
@@ -41,6 +44,7 @@ class ToolMainContentProcessor(ToolContentProcessor):
     """
     Strategy that processes the main content of a tool before it is serialized.
     """
+
     def __call__(self, tool: Dict) -> Dict:
         assert isinstance(tool, dict), "Tool must be a dictionary"
         if "function" in tool:
@@ -51,7 +55,9 @@ class ToolMainContentProcessor(ToolContentProcessor):
         elif "name" in tool and "parameters" in tool:
             return tool
         else:
-            raise ValueError(f"Tool must have a function or name and parameters: {tool}")
+            raise ValueError(
+                f"Tool must have a function or name and parameters: {tool}"
+            )
 
     # The main-content extraction cannot be replicated in pure Jinja, so we
     # fall back to the identity behaviour at template-generation time.  This
@@ -107,19 +113,27 @@ class JsonFormatter(ToolFormatter):
         # For string tools, we just join them with the joiner
         if all(isinstance(tool, str) for tool in tools):
             return self.joiner.join(tools)
-        
-        if self.indent is None and self.separators == (',', ':'):
+
+        if self.indent is None and self.separators == (",", ":"):
             sort_keys = True
         else:
             sort_keys = False
 
         if self.format_as_list:
             # Serialize the whole list in one go – joiner is irrelevant in this mode.
-            return json.dumps(tools, indent=self.indent, separators=self.separators, sort_keys=sort_keys)
+            return json.dumps(
+                tools,
+                indent=self.indent,
+                separators=self.separators,
+                sort_keys=sort_keys,
+            )
 
         # Default behaviour: dump each tool individually then concatenate.
         return self.joiner.join(
-            json.dumps(t, indent=self.indent, separators=self.separators, sort_keys=sort_keys) for t in tools
+            json.dumps(
+                t, indent=self.indent, separators=self.separators, sort_keys=sort_keys
+            )
+            for t in tools
         )
 
     # ------------------------------------------------------------------
@@ -141,7 +155,7 @@ class JsonFormatter(ToolFormatter):
         a limited subset of Jinja, we restrict ourselves to `map`, `tojson`,
         `join`, and optional indent on a *single* tojson call when
         ``format_as_list`` is *True*.
-        
+
         When ``format_as_list`` is *False* and ``indent`` is specified, we use
         a Jinja loop to apply indentation to each individual tool.
         """
@@ -150,7 +164,7 @@ class JsonFormatter(ToolFormatter):
         if self.format_as_list:
             if self.indent is None:
                 # Check if we need compact format (no spaces) to match format() behavior
-                if self.separators == (',', ':'):
+                if self.separators == (",", ":"):
                     # Use tojson with compact separators to match format() behavior
                     return "{{ tools | tojson(separators=(',', ':')) }}"
                 else:
@@ -164,12 +178,19 @@ class JsonFormatter(ToolFormatter):
             # Use loop to apply indentation to each individual tool
             # For joiners containing newlines, we need to avoid whitespace control to preserve them
             # For other joiners, we can use whitespace control for cleaner output
-            
-            if '\n' in self.joiner:
+
+            if "\n" in self.joiner:
                 # Joiner contains newlines - use Jinja's string replacement to convert \n to actual newlines
                 # We'll create a Jinja variable with the proper newlines
-                joiner_var = '{% set joiner = "' + self.joiner.replace('\n', '\\n') + '" | replace("\\\\n", "\n") %}'
-                return joiner_var + f"{{% for tool in tools %}}{{{{ tool | tojson(indent={self.indent}) }}}}{{% if not loop.last %}}{{{{ joiner }}}}{{% endif %}}{{% endfor %}}"
+                joiner_var = (
+                    '{% set joiner = "'
+                    + self.joiner.replace("\n", "\\n")
+                    + '" | replace("\\\\n", "\n") %}'
+                )
+                return (
+                    joiner_var
+                    + f"{{% for tool in tools %}}{{{{ tool | tojson(indent={self.indent}) }}}}{{% if not loop.last %}}{{{{ joiner }}}}{{% endif %}}{{% endfor %}}"
+                )
             else:
                 # Joiner doesn't contain newlines - safe to use whitespace control and escaping
                 joiner_escaped = self._escape_joiner(self.joiner)
@@ -177,15 +198,24 @@ class JsonFormatter(ToolFormatter):
         else:
             # No indentation needed, use the simpler map approach
             joiner_escaped = self._escape_joiner(self.joiner)
-            return (
-                "{{ tools | map('tojson') | join('" + joiner_escaped + "') }}"
-            )
+            return "{{ tools | map('tojson') | join('" + joiner_escaped + "') }}"
+
 
 class JsonMinifiedFormatter(JsonFormatter):
     """Single-line JSON objects without extra whitespace (legacy alias)."""
 
-    def __init__(self, joiner: str = "\n", *, content_processor: Callable[[Dict], Any] | None = None):
-        super().__init__(indent=None, separators=(",", ":"), joiner=joiner, content_processor=content_processor)
+    def __init__(
+        self,
+        joiner: str = "\n",
+        *,
+        content_processor: Callable[[Dict], Any] | None = None,
+    ):
+        super().__init__(
+            indent=None,
+            separators=(",", ":"),
+            joiner=joiner,
+            content_processor=content_processor,
+        )
 
 
 class JsonIndentedFormatter(JsonFormatter):
@@ -195,21 +225,40 @@ class JsonIndentedFormatter(JsonFormatter):
     (legacy alias)
     """
 
-    def __init__(self, indent: int = 4, *, joiner: str = "\n\n", format_as_list: bool = False):
-        super().__init__(indent=indent, separators=None, joiner=joiner, format_as_list=format_as_list)
+    def __init__(
+        self, indent: int = 4, *, joiner: str = "\n\n", format_as_list: bool = False
+    ):
+        super().__init__(
+            indent=indent, separators=None, joiner=joiner, format_as_list=format_as_list
+        )
 
 
 class JsonCompactFormatter(JsonFormatter):
     """Single-line JSON objects without extra whitespace."""
-    def __init__(self, *, format_as_list: bool = True, content_processor: Callable[[Dict], Any] | None = None):
-        super().__init__(indent=None, separators=(',', ':'), format_as_list=format_as_list, content_processor=content_processor)
+
+    def __init__(
+        self,
+        *,
+        format_as_list: bool = True,
+        content_processor: Callable[[Dict], Any] | None = None,
+    ):
+        super().__init__(
+            indent=None,
+            separators=(",", ":"),
+            format_as_list=format_as_list,
+            content_processor=content_processor,
+        )
+
 
 class JsonQwenFormatter(JsonFormatter):
     """
     JSON formatter for Qwen models.
     """
+
     def __init__(self):
-        super().__init__(indent=None, separators=None, format_as_list=False, content_processor=None)
+        super().__init__(
+            indent=None, separators=None, format_as_list=False, content_processor=None
+        )
 
     # No special behaviour – inherits .jinja from JsonFormatter
 
@@ -218,8 +267,15 @@ class JsonFormatterNoBreakLine(JsonFormatter):
     """
     JSON formatter for Qwen models.
     """
+
     def __init__(self):
-        super().__init__(indent=None, separators=None, format_as_list=False, content_processor=None, joiner="")
+        super().__init__(
+            indent=None,
+            separators=None,
+            format_as_list=False,
+            content_processor=None,
+            joiner="",
+        )
 
 
 try:
@@ -232,17 +288,19 @@ except ModuleNotFoundError:  # pragma: no cover
     YamlFormatter = None  # type: ignore
 
 
-
 @dataclasses.dataclass
 class ToolPolicy:
     """
     Encapsulates every configuration decision about how *tools*
     appear in the prompt for a given template.
     """
+
     placement: "ToolPlacement" = ToolPlacement.SYSTEM
     content_processor: Callable[[Dict], Any] = None
     tool_call_content_processor: Callable[[Dict], Any] = None
-    formatter: ToolFormatter = dataclasses.field(default_factory=lambda: JsonQwenFormatter())
+    formatter: ToolFormatter = dataclasses.field(
+        default_factory=lambda: JsonQwenFormatter()
+    )
 
     def format_tools(self, tools: List[Dict]) -> str:
         """
@@ -255,11 +313,11 @@ class ToolPolicy:
         return self.formatter.format(processed_tools)
 
 
-
 class KimiK2ToolCallContentProcessor(ToolContentProcessor):
     """
     Strategy that processes the content of a tool for Kimi-K2.
     """
+
     def __call__(self, tool: Dict) -> Dict:
         assert isinstance(tool, dict), "Tool call must be a dictionary"
         arguments = ""
@@ -280,7 +338,7 @@ class KimiK2ToolCallContentProcessor(ToolContentProcessor):
 
     def jinja(self) -> str:
         """Return a Jinja template that processes a tool call for Kimi-K2 format.
-        
+
         The template extracts the id, function/arguments, and formats them as:
         {id}<|tool_call_argument_begin|>{arguments_json}
         """

@@ -1,26 +1,11 @@
+from ..constants import ToolPlacement
+from ..policies import (AssistantPolicy, GlobalPolicy, JsonCompactFormatter,
+                        JsonFormatterNoBreakLine, JsonIndentedFormatter,
+                        KimiK2ToolCallContentProcessor, Llama32DateProcessor,
+                        Qwen25AssistantContentProcessor, SystemPolicy,
+                        ToolMainContentProcessor, ToolPolicy)
+from ..templates import Qwen3Template, Template
 from . import register_template
-from ..templates import Template, Qwen3Template
-from ..constants import (
-    Role,
-    ToolPlacement,
-)
-from ..policies import (
-    SystemPolicy,
-    AssistantPolicy,
-    Qwen25AssistantContentProcessor,
-    GlobalPolicy,
-    Llama32DateProcessor,
-    ToolPolicy,
-    JsonIndentedFormatter,
-    JsonQwenFormatter,
-    JsonMinifiedFormatter,
-    JsonCompactFormatter,
-    JsonFormatterNoBreakLine,
-    ToolMainContentProcessor,
-    ToolFormatter,
-    ToolContentProcessor,
-    KimiK2ToolCallContentProcessor,
-)
 
 register_template(
     Template(
@@ -85,7 +70,9 @@ register_template(
         stop_words=["<|im_end|>"],
         system_policy=SystemPolicy(
             use_system_without_system_message=False,
-            content_processor=lambda system, tools: f"{system}\n\n" if (system != "" and tools) else system,
+            content_processor=lambda system, tools: f"{system}\n\n"
+            if (system != "" and tools)
+            else system,
         ),
         assistant_policy=AssistantPolicy(
             content_processor=Qwen25AssistantContentProcessor(),
@@ -146,7 +133,9 @@ register_template(
         stop_words=["<|im_end|>"],
         system_policy=SystemPolicy(
             use_system_without_system_message=False,
-            content_processor=lambda system, tools: f"{system}\n\n" if (system != "" and tools) else system,
+            content_processor=lambda system, tools: f"{system}\n\n"
+            if (system != "" and tools)
+            else system,
         ),
         assistant_policy=AssistantPolicy(
             content_processor=Qwen25AssistantContentProcessor(),
@@ -173,7 +162,9 @@ register_template(
         stop_words=["<|im_end|>"],
         system_policy=SystemPolicy(
             use_system_without_system_message=False,
-            content_processor=lambda system, tools: f"{system}\n\n" if (system != "" and tools) else system,
+            content_processor=lambda system, tools: f"{system}\n\n"
+            if (system != "" and tools)
+            else system,
         ),
         assistant_policy=AssistantPolicy(
             content_processor=Qwen25AssistantContentProcessor(),
@@ -192,7 +183,6 @@ register_template(
         stop_words=["<|EOT|>"],
     )
 )
-
 
 
 # TODO: mistral template has many cornor cases, leave it for now
@@ -232,9 +222,8 @@ register_template(
             content_processor=Llama32DateProcessor(),
         ),
         tool_policy=ToolPolicy(
-            placement=ToolPlacement.FIRST_USER,
-            formatter=JsonIndentedFormatter()
-        )
+            placement=ToolPlacement.FIRST_USER, formatter=JsonIndentedFormatter()
+        ),
     )
 )
 
@@ -245,9 +234,7 @@ register_template(
         user_template="<|user|>\n{content}",
         assistant_template="<|assistant|>\n{content}",
         stop_words=[""],
-        global_policy=GlobalPolicy(
-            prefix="[gMASK]<sop>"
-        ),
+        global_policy=GlobalPolicy(prefix="[gMASK]<sop>"),
         system_policy=SystemPolicy(
             use_system=True,
             use_system_without_system_message=False,
@@ -283,7 +270,7 @@ register_template(
             placement=ToolPlacement.SYSTEM,
             content_processor=ToolMainContentProcessor(),
             formatter=JsonCompactFormatter(),
-        )
+        ),
     )
 )
 
@@ -295,14 +282,12 @@ register_template(
         assistant_template="<｜Assistant｜>{content}<｜end▁of▁sentence｜>",
         stop_words=["<｜end▁of▁sentence｜>"],
         generation_prompt="<｜Assistant｜><think>\n",
-        global_policy=GlobalPolicy(
-            prefix="<｜begin▁of▁sentence｜>"
-        ),
+        global_policy=GlobalPolicy(prefix="<｜begin▁of▁sentence｜>"),
         system_policy=SystemPolicy(
             use_system=True,
             use_system_without_system_message=False,
         ),
-        chat_template="{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=false, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{% set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{{ns.system_prompt}}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- set ns.is_tool = false -%}{{'<｜User｜>' + message['content']}}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is none %}{%- set ns.is_tool = false -%}{%- for tool in message['tool_calls']%}{%- if not ns.is_first %}{{'<｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{%- set ns.is_first = true -%}{%- else %}{{'\\n' + '<｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{{'<｜tool▁calls▁end｜><｜end▁of▁sentence｜>'}}{%- endif %}{%- endfor %}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is not none %}{%- if ns.is_tool %}{{'<｜tool▁outputs▁end｜>' + message['content'] + '<｜end▁of▁sentence｜>'}}{%- set ns.is_tool = false -%}{%- else %}{% set content = message['content'] %}{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}{{'<｜Assistant｜>' + content + '<｜end▁of▁sentence｜>'}}{%- endif %}{%- endif %}{%- if message['role'] == 'tool' %}{%- set ns.is_tool = true -%}{%- if ns.is_output_first %}{{'<｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- set ns.is_output_first = false %}{%- else %}{{'\\n<｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- endif %}{%- endif %}{%- endfor -%}{% if ns.is_tool %}{{'<｜tool▁outputs▁end｜>'}}{% endif %}{% if add_generation_prompt and not ns.is_tool %}{{'<｜Assistant｜><think>\\n'}}{% endif %}"
+        chat_template="{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=false, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{% set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{{ns.system_prompt}}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- set ns.is_tool = false -%}{{'<｜User｜>' + message['content']}}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is none %}{%- set ns.is_tool = false -%}{%- for tool in message['tool_calls']%}{%- if not ns.is_first %}{{'<｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{%- set ns.is_first = true -%}{%- else %}{{'\\n' + '<｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{{'<｜tool▁calls▁end｜><｜end▁of▁sentence｜>'}}{%- endif %}{%- endfor %}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is not none %}{%- if ns.is_tool %}{{'<｜tool▁outputs▁end｜>' + message['content'] + '<｜end▁of▁sentence｜>'}}{%- set ns.is_tool = false -%}{%- else %}{% set content = message['content'] %}{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}{{'<｜Assistant｜>' + content + '<｜end▁of▁sentence｜>'}}{%- endif %}{%- endif %}{%- if message['role'] == 'tool' %}{%- set ns.is_tool = true -%}{%- if ns.is_output_first %}{{'<｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- set ns.is_output_first = false %}{%- else %}{{'\\n<｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- endif %}{%- endif %}{%- endfor -%}{% if ns.is_tool %}{{'<｜tool▁outputs▁end｜>'}}{% endif %}{% if add_generation_prompt and not ns.is_tool %}{{'<｜Assistant｜><think>\\n'}}{% endif %}",
     )
 )
 
@@ -312,7 +297,7 @@ register_template(
         system_template="{system_message}",
         user_template="Input:{content}\n\n",
         assistant_template="Response:{content}</s>",
-        stop_words=["</s>"]
+        stop_words=["</s>"],
     )
 )
 
@@ -340,7 +325,7 @@ register_template(
         tool_policy=ToolPolicy(
             formatter=JsonCompactFormatter(),
             tool_call_content_processor=KimiK2ToolCallContentProcessor(),
-        )
+        ),
     )
 )
 

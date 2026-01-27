@@ -1,37 +1,18 @@
-
-from collections import defaultdict
-from copy import copy, deepcopy
 import dataclasses
-import json
-from typing import Callable, List, Any, Dict, Union, Tuple
-import warnings
 import logging
+from collections import defaultdict
+from copy import deepcopy
+from typing import Any, Dict, List, Tuple, Union
+
 import torch
-from transformers import PreTrainedTokenizer
-import re
-from typing import Protocol
-from ..policies import (
-    ToolFormatter,
-    JsonMinifiedFormatter,
-    JsonCompactFormatter,
-    JsonIndentedFormatter,
-    ToolMainContentProcessor,
-    JsonQwenFormatter,
-)
-from .renderer import Renderer, Qwen3Renderer
+from transformers import AutoTokenizer, PreTrainedTokenizer
+
+from ..policies import AssistantPolicy, GlobalPolicy, SystemPolicy, ToolPolicy
 from .jinja_generator import JinjaGenerator
-from datetime import datetime
-from ..constants import Role
-from ..policies import Llama32DateProcessor, SystemPolicy
-from ..policies import AssistantPolicy, Qwen25AssistantContentProcessor
-from ..policies import ToolPolicy
-from ..constants import ToolPlacement, Role
-from ..policies import GlobalPolicy
-from transformers import AutoTokenizer
+from .renderer import Qwen3Renderer, Renderer
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 
 
 @dataclasses.dataclass
@@ -52,6 +33,7 @@ class Template:
         system_policy: The system message policy, controls the behavior of forming the system message
         tool_policy: The tool policy for the template, controls the behavior of forming tools.
     """
+
     # The name of this template
     name: str
     # The template of the system prompt
@@ -74,7 +56,6 @@ class Template:
     tool_calls_template: str = "{tool_calls}"
     # The single tool call template
     tool_call_template: str = "{tool_call}"
-
 
     # Stop criteria (the default one is EOS token)
     stop_words: Union[str, List[str]] = None
@@ -108,14 +89,14 @@ class Template:
             self.system_policy = SystemPolicy()
         if self.assistant_policy is None:
             self.assistant_policy = AssistantPolicy()
-    
+
     def _register_vision_processor(self):
         """Automatically register a vision processor for this template"""
         from ..vision import VisionProcessorConfig, register_processor
-        
+
         # Determine model type based on template name
         model_type = self._infer_model_type()
-        
+
         # Create vision config
         config = VisionProcessorConfig(
             model_type=model_type,
@@ -124,16 +105,16 @@ class Template:
             vision_start=self.vision_start or "",
             vision_end=self.vision_end or "",
             processor_class="AutoProcessor",
-            expansion_strategy="patch_based"
+            expansion_strategy="patch_based",
         )
-        
+
         # Register the processor
         register_processor(self.name, config)
-    
+
     def _infer_model_type(self) -> str:
         """Infer model type from template name"""
         name_lower = self.name.lower()
-        
+
         if "qwen" in name_lower:
             return "qwen_vl"
         elif "llava" in name_lower:
@@ -157,12 +138,16 @@ class Template:
             return "patch_based"
 
     def _supports_tool_call(self) -> bool:
-        if (self.system_template_with_tools or self.user_template_with_tools) and self.tool_template:
+        if (
+            self.system_template_with_tools or self.user_template_with_tools
+        ) and self.tool_template:
             return True
         else:
             return False
 
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False) -> str:
+    def render(
+        self, messages: List[Dict], tools=None, add_generation_prompt: bool = False
+    ) -> str:
         """
         Render the messages to a string prompt by applying the chat template. The render logic is implemented in the `Renderer` class.
 
@@ -176,7 +161,16 @@ class Template:
         """
         return Renderer(self).render(messages, tools, add_generation_prompt)
 
-    def encode(self, messages: List[Dict], tokenizer: PreTrainedTokenizer, return_tensors: str = None, tools=None, add_generation_prompt=False, processor=None, **kwargs) -> str:
+    def encode(
+        self,
+        messages: List[Dict],
+        tokenizer: PreTrainedTokenizer,
+        return_tensors: str = None,
+        tools=None,
+        add_generation_prompt=False,
+        processor=None,
+        **kwargs,
+    ) -> str:
         """Encode the messages to token ids.
 
         Args:
@@ -186,24 +180,49 @@ class Template:
             tools: The list of tools
             add_generation_prompt: Whether to add the generation prefix
             processor: The processor for vision templates
-        
+
         Returns:
             inputs: The dictionary of input ids, attention mask, labels, and action mask
         """
         if processor is None and self.supports_vision():
             raise ValueError(f"Processor is required for vision templates: {self.name}")
-        
+
         if self.supports_vision():
             # Use vision-aware encoding with proper alignment
-            return self._encode_with_vision_processor(messages, tokenizer, return_tensors, tools, add_generation_prompt=add_generation_prompt, processor=processor, **kwargs)
+            return self._encode_with_vision_processor(
+                messages,
+                tokenizer,
+                return_tensors,
+                tools,
+                add_generation_prompt=add_generation_prompt,
+                processor=processor,
+                **kwargs,
+            )
         else:
             # Use standard encoding
-            return self._encode_standard(messages, tokenizer, return_tensors, tools, add_generation_prompt=add_generation_prompt, **kwargs)
+            return self._encode_standard(
+                messages,
+                tokenizer,
+                return_tensors,
+                tools,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
 
-    def _encode_standard(self, messages: List[Dict], tokenizer: PreTrainedTokenizer, return_tensors: str = None, tools=None, add_generation_prompt=False, **kwargs) -> str:
+    def _encode_standard(
+        self,
+        messages: List[Dict],
+        tokenizer: PreTrainedTokenizer,
+        return_tensors: str = None,
+        tools=None,
+        add_generation_prompt=False,
+        **kwargs,
+    ) -> str:
         logger.debug(f"[Template] Encoding standard for template: {self.name}")
         """Standard encoding without vision support"""
-        prompt, elements, mask_flags = self.render(messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs)
+        prompt, elements, mask_flags = self.render(
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+        )
         input_ids = []
         attention_mask = []
         labels = []
@@ -217,7 +236,7 @@ class Template:
                 attention_mask.append(1)
                 labels.append(-100)
                 action_mask.append(0)
-        
+
         for element, mask_flag in zip(elements, mask_flags):
             cur_input_ids = tokenizer.encode(element, add_special_tokens=False)
             input_ids.extend(cur_input_ids)
@@ -232,33 +251,48 @@ class Template:
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            action_mask=action_mask
+            action_mask=action_mask,
         )
         if return_tensors == "pt":
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
         return inputs
 
-    def _encode_with_vision_processor(self, messages: List[Dict], tokenizer: PreTrainedTokenizer, return_tensors: str = None, tools=None, add_generation_prompt=False, processor=None, **kwargs) -> str:
-        logger.debug(f"[Template] Encoding with vision processor for template: {self.name}")
+    def _encode_with_vision_processor(
+        self,
+        messages: List[Dict],
+        tokenizer: PreTrainedTokenizer,
+        return_tensors: str = None,
+        tools=None,
+        add_generation_prompt=False,
+        processor=None,
+        **kwargs,
+    ) -> str:
+        logger.debug(
+            f"[Template] Encoding with vision processor for template: {self.name}"
+        )
         """Encode with vision processor handling proper alignment"""
-        from ..vision import get_processor
         from ..utils import extract_vision_inputs_from_messages
-        
+        from ..vision import get_processor
+
         # Get vision processor
         vision_processor = get_processor(self.name)
         if vision_processor is None:
-            raise ValueError(f"No vision processor registered for template: {self.name}")
-        
+            raise ValueError(
+                f"No vision processor registered for template: {self.name}"
+            )
+
         # Get base prompt and mask information
-        prompt, elements, mask_flags = self.render(messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs)
-        
+        prompt, elements, mask_flags = self.render(
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+        )
+
         # Extract vision inputs
         images, videos = extract_vision_inputs_from_messages(messages)
 
         logger.debug(f"[Template] images: {len(images)}")
         logger.debug(f"[Template] videos: {len(videos)}")
         logger.debug(f"[Template] messages: {messages}")
-        
+
         # Use vision processor with alignment support
         return vision_processor.process_for_llm(
             prompt=prompt,
@@ -268,12 +302,13 @@ class Template:
             videos=videos,
             processor=processor,
             tokenizer=tokenizer,
-            return_tensors=return_tensors
+            return_tensors=return_tensors,
         )
-    
+
     def supports_vision(self) -> bool:
         """Check if this template supports vision processing"""
         from ..vision import is_vision_template
+
         return is_vision_template(self.name)
 
     def get_vision_inputs(self, messages: List[Dict]):
@@ -285,21 +320,27 @@ class Template:
             content = message["content"]
             if isinstance(content, list):
                 for item in content:
-                    if item['type'] == 'text':
+                    if item["type"] == "text":
                         continue
-                    elif item['type'] in ['image', 'image_url', 'image_base64']:
-                        vision_inputs["image"].append(open_image_from_any(item[item['type']]))
-                    elif item['type'] == 'video':
-                        raise NotImplementedError("Video is not supported for chat template.")
+                    elif item["type"] in ["image", "image_url", "image_base64"]:
+                        vision_inputs["image"].append(
+                            open_image_from_any(item[item["type"]])
+                        )
+                    elif item["type"] == "video":
+                        raise NotImplementedError(
+                            "Video is not supported for chat template."
+                        )
                     else:
                         raise ValueError(f"Invalid message type: {item['type']}")
             else:
-                raise ValueError(f"Invalid message content: {content}, the content should be a list of dicts")
+                raise ValueError(
+                    f"Invalid message content: {content}, the content should be a list of dicts"
+                )
         return vision_inputs
 
     def jinja_template(self) -> str:
         """Get the Jinja template string for the template. The jinja template is compitable with Hugging Face's tokenizer.apply_chat_template method.
-        
+
         Example:
         ```python
         tokenizer.chat_template = template.jinja_template()
@@ -313,9 +354,18 @@ class Template:
         else:
             return JinjaGenerator(self).generate_jinja_template()
 
-    def render_with_mask(self, messages: List[Dict], add_generation_prompt: bool = False, tools=None, **kwargs):
+    def render_with_mask(
+        self,
+        messages: List[Dict],
+        add_generation_prompt: bool = False,
+        tools=None,
+        **kwargs,
+    ):
         from termcolor import colored
-        prompt, elements, mask_flags = self.render(messages, add_generation_prompt=add_generation_prompt, tools=tools, **kwargs)
+
+        prompt, elements, mask_flags = self.render(
+            messages, add_generation_prompt=add_generation_prompt, tools=tools, **kwargs
+        )
 
         prompt = ""
         for element, mask_flag in zip(elements, mask_flags):
@@ -328,7 +378,6 @@ class Template:
     def set_system_message(self, system_message: str):
         """Set the system message."""
         self.system_message = system_message
-
 
     def copy(self):
         return self.__class__(
@@ -370,45 +419,74 @@ class Template:
 
 
 class Qwen3Template(Template):
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False, enable_thinking: bool = False) -> str:
-        return Qwen3Renderer(self).render(messages, tools, add_generation_prompt, enable_thinking)
-    
+    def render(
+        self,
+        messages: List[Dict],
+        tools=None,
+        add_generation_prompt: bool = False,
+        enable_thinking: bool = False,
+    ) -> str:
+        return Qwen3Renderer(self).render(
+            messages, tools, add_generation_prompt, enable_thinking
+        )
+
 
 class HFTemplate(Template):
     """
     A general template that uses Hugging Face tokenizer's chat template.
-    It aims to work for most HF's tokenizer's chat template and supports masking by applying chat template iteratively to 
+    It aims to work for most HF's tokenizer's chat template and supports masking by applying chat template iteratively to
     increasing turns of messages. This method only works for chat template that directly append elements when geting more
-    turns of messages. It does not work for chat template that will modify the previous prompt of content (e.g. Qwen3's 
+    turns of messages. It does not work for chat template that will modify the previous prompt of content (e.g. Qwen3's
     template which deletes the previous thinking content).
     """
+
     def __init__(self, name: str):
         super().__init__(name=name)
         self.tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
         if self.tokenizer.chat_template is None:
-            raise ValueError(f"Tokenizer from {name} does not have a chat_template. Cannot use HFTemplate.")
+            raise ValueError(
+                f"Tokenizer from {name} does not have a chat_template. Cannot use HFTemplate."
+            )
         # Use HFRenderer for rendering
         from .renderer import HFRenderer
+
         self._renderer = HFRenderer(self)
 
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False, **kwargs) -> Tuple[str, List[str], List[bool]]:
+    def render(
+        self,
+        messages: List[Dict],
+        tools=None,
+        add_generation_prompt: bool = False,
+        **kwargs,
+    ) -> Tuple[str, List[str], List[bool]]:
         """Render messages using HF tokenizer's chat template.
-        
+
         Returns:
             prompt: The final prompt string
             elements: The list of string *elements* that compose the prompt
             mask_flags: The list of mask flags for the elements
         """
-        return self._renderer.render(messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs)
-    
-    def encode(self, messages: List[Dict], tokenizer: PreTrainedTokenizer, return_tensors: str = None, tools=None, add_generation_prompt=False, processor=None, **kwargs) -> Dict[str, Any]:
+        return self._renderer.render(
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+        )
+
+    def encode(
+        self,
+        messages: List[Dict],
+        tokenizer: PreTrainedTokenizer,
+        return_tensors: str = None,
+        tools=None,
+        add_generation_prompt=False,
+        processor=None,
+        **kwargs,
+    ) -> Dict[str, Any]:
         """Encode messages by reusing render() to get elements and mask_flags, then tokenizing.
-        
+
         This method follows the same pattern as Template._encode_standard() by:
         1. Calling render() to get (prompt, elements, mask_flags)
         2. Tokenizing each element separately
         3. Using mask_flags to set labels and action_mask
-        
+
         Args:
             messages: The list of messages
             tokenizer: The tokenizer (should be the same as self.tokenizer, but kept for compatibility)
@@ -417,21 +495,23 @@ class HFTemplate(Template):
             add_generation_prompt: Whether to add the generation prefix
             processor: Not used for HF templates (kept for compatibility)
             **kwargs: Additional keyword arguments for render()
-        
+
         Returns:
             inputs: Dictionary with input_ids, attention_mask, labels, and action_mask
         """
         # Use self.tokenizer if provided tokenizer is different (for compatibility)
         tokenizer_to_use = self.tokenizer
-        
+
         # Reuse render() to get elements and mask_flags (same as base Template)
-        prompt, elements, mask_flags = self.render(messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs)
-        
+        prompt, elements, mask_flags = self.render(
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+        )
+
         input_ids = []
         attention_mask = []
         labels = []
         action_mask = []
-        
+
         # Handle BOS token if needed (same as base Template)
         if tokenizer_to_use.bos_token:
             if getattr(tokenizer_to_use, "add_bos_token", True):
@@ -439,7 +519,7 @@ class HFTemplate(Template):
                 attention_mask.append(1)
                 labels.append(-100)
                 action_mask.append(0)
-        
+
         # Tokenize each element separately (same as base Template)
         for element, mask_flag in zip(elements, mask_flags):
             cur_input_ids = tokenizer_to_use.encode(element, add_special_tokens=False)
@@ -453,21 +533,22 @@ class HFTemplate(Template):
                 # mask_flag=False means assistant, so don't mask it
                 labels.extend(cur_input_ids)
                 action_mask.extend([1] * len(cur_input_ids))
-        
+
         inputs = dict(
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            action_mask=action_mask
+            action_mask=action_mask,
         )
-        
+
         if return_tensors == "pt":
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
-        
+
         return inputs
 
     def jinja_template(self) -> str:
         return self.tokenizer.chat_template
+
 
 if __name__ == "__main__":
     pass

@@ -103,7 +103,7 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt):
     # Filter invalid combinations
     if add_generation_prompt and messages[-1]['role'] == 'assistant':
         return
-    
+
     template_tokenizer_mapping = {
         "qwen2.5-vl": "Qwen/Qwen2.5-VL-3B-Instruct",
         "qwen3-vl-instruct": "Qwen/Qwen3-VL-30B-A3B-Instruct",
@@ -115,4 +115,3 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt):
     assert is_equal_between_jinja_prompts, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}\n\nJinja prompt:\n\n{implemented_jinja_prompt}"
     print(f"Official prompt:\n\n{official_prompt}")
     print(f"Highlighted prompt:\n\n{highlighted_prompt}")
-

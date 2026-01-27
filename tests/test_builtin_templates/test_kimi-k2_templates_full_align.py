@@ -45,7 +45,7 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt):
     # Filter invalid combinations
     if not validate_messages_for_template(template, messages, tools, add_generation_prompt):
         pytest.skip("Invalid messages for the template")
-    
+
     template_tokenizer_mapping = {
         "qwen2.5": "Qwen/Qwen2.5-3B-Instruct",
         "qwen2.5-think": "Qwen/Qwen2.5-3B-Instruct",
@@ -73,4 +73,3 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt):
         print(f"Jinja prompt:\n\n||{implemented_jinja_prompt}||")
     assert is_equal, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nOfficial prompt:\n\n{official_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}"
     assert is_equal_between_jinja_prompts, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}\n\nJinja prompt:\n\n{implemented_jinja_prompt}"
-    

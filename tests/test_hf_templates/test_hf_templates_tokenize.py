@@ -49,7 +49,7 @@ def test_template_tokenize(template_and_repo_name, messages, tools, add_generati
         tokenizer,
         template_and_repo_name[0],
         max_length=2048,
-        tools=tools, 
+        tools=tools,
         add_generation_prompt=add_generation_prompt,
         return_tensors="pt"
     )

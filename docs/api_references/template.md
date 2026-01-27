@@ -22,4 +22,3 @@ template = Template(
 ::: chat_bricks.templates.Renderer
 
 ::: chat_bricks.templates.JinjaGenerator
-

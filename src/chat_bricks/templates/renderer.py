@@ -1,9 +1,14 @@
-from typing import List, Dict, Tuple, Union
 import json
-from ..constants import Role, ToolPlacement
 import logging
+from typing import TYPE_CHECKING, Dict, List, Tuple, Union
+
+from ..constants import Role, ToolPlacement
+
+if TYPE_CHECKING:
+    from .templates import HFTemplate, Qwen3Template, Template
 
 logger = logging.getLogger(__name__)
+
 
 class Renderer:
     def __init__(self, template: "Template"):
@@ -13,19 +18,27 @@ class Renderer:
         full_tool_calls_str = []
         for tool_call in tool_calls:
             if self.template.tool_policy.tool_call_content_processor is not None:
-                tool_call_str = self.template.tool_policy.tool_call_content_processor(tool_call)
+                tool_call_str = self.template.tool_policy.tool_call_content_processor(
+                    tool_call
+                )
             else:
-                if 'type' in tool_call and tool_call['type'] == 'function':
-                    tool_call = tool_call['function']
+                if "type" in tool_call and tool_call["type"] == "function":
+                    tool_call = tool_call["function"]
                 tool_call_str = json.dumps(tool_call)
-            full_tool_calls_str.append(self.template.tool_call_template.format(tool_call=tool_call_str))
-        
+            full_tool_calls_str.append(
+                self.template.tool_call_template.format(tool_call=tool_call_str)
+            )
+
         if self.template.tool_calls_template is not None:
-            return self.template.tool_calls_template.format(tool_calls="".join(full_tool_calls_str))
+            return self.template.tool_calls_template.format(
+                tool_calls="".join(full_tool_calls_str)
+            )
         else:
             return "".join(full_tool_calls_str)
 
-    def _render_tool_observation(self, tool_observation_content: Union[str, List[Dict]]) -> str:
+    def _render_tool_observation(
+        self, tool_observation_content: Union[str, List[Dict]]
+    ) -> str:
         """
         Render parallel tool call observations into a single string. For example, for qwen3 with
         following tool observations: obs1, obs2, obs3, the rendered string should be:
@@ -41,7 +54,9 @@ class Renderer:
             elif isinstance(tool_observation_content, list):
                 return "\n".join([item["text"] for item in tool_observation_content])
             else:
-                raise ValueError(f"Invalid tool observation content type: {type(tool_observation_content)}")
+                raise ValueError(
+                    f"Invalid tool observation content type: {type(tool_observation_content)}"
+                )
 
         if isinstance(tool_observation_content, str):
             text = tool_observation_content
@@ -53,22 +68,32 @@ class Renderer:
                 if item["type"] == "text":
                     text += item["text"]
                 elif item["type"] == "image":
-                    text += self.template.vision_start + self.template.image_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.image_token
+                        + self.template.vision_end
+                    )
                 # This is for openai format, since chat completion API only supports image_url
                 elif item["type"] == "image_url":
-                    text += self.template.vision_start + self.template.image_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.image_token
+                        + self.template.vision_end
+                    )
                 else:
                     raise ValueError(f"Invalid message type: {item['type']}")
         else:
-            raise ValueError(f"Invalid tool observation content type: {type(tool_observation_content)}")
+            raise ValueError(
+                f"Invalid tool observation content type: {type(tool_observation_content)}"
+            )
 
         return self.template.tool_observation_template.format(observation=text)
 
     def _preprocess_messages(self, messages: List[Dict]) -> List[Dict]:
         """Preprocess the messages to remove nested structures in messages
-           e.g. multi (parallel) tool calls, multiple tool observations. We need to insert them into message, however, if there are multiple 
-           tool calls or observations, we will have to know previous or later messages to insert them correctly. This is not we want for our
-           Template class.
+        e.g. multi (parallel) tool calls, multiple tool observations. We need to insert them into message, however, if there are multiple
+        tool calls or observations, we will have to know previous or later messages to insert them correctly. This is not we want for our
+        Template class.
         """
         preprocessed_messages = []
         tool_observations_str = []
@@ -80,16 +105,22 @@ class Renderer:
                     message["content"] = ""
                 preprocessed_messages.append(message)
             elif message["role"] == "tool" and "content" in message:
-                tool_observations_str.append(self._render_tool_observation(message["content"]))
-                if i == len(messages) - 1 or messages[i+1]["role"] != "tool":
-                    preprocessed_messages.append({"role": "tool", "content": "".join(tool_observations_str)})
+                tool_observations_str.append(
+                    self._render_tool_observation(message["content"])
+                )
+                if i == len(messages) - 1 or messages[i + 1]["role"] != "tool":
+                    preprocessed_messages.append(
+                        {"role": "tool", "content": "".join(tool_observations_str)}
+                    )
                     tool_observations_str = []
             else:
                 preprocessed_messages.append(message)
-            
+
         return preprocessed_messages
 
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False) -> str:
+    def render(
+        self, messages: List[Dict], tools=None, add_generation_prompt: bool = False
+    ) -> str:
         """Render the template.
 
         The heavy lifting is delegated to small, single-purpose helpers so the
@@ -113,7 +144,9 @@ class Renderer:
         # Step 1 – decide tool placement & clone messages
         work_messages = self._preprocess_messages(messages)
         logger.debug(f"[Template] work_messages: {work_messages}")
-        work_messages, tools_str, insert_tools_idx = self._insert_tools(work_messages, tools)
+        work_messages, tools_str, insert_tools_idx = self._insert_tools(
+            work_messages, tools
+        )
 
         # Step 2 – encode each conversation turn to text tokens
         elements, roles = self._encode_turns(work_messages, tools_str, insert_tools_idx)
@@ -186,7 +219,9 @@ class Renderer:
                 continue
             elif i == 0 and current_role != Role.SYSTEM:
                 if self.template.system_policy.use_system:
-                    system_message = self._encode_system_message_default(tools=tools_str)
+                    system_message = self._encode_system_message_default(
+                        tools=tools_str
+                    )
                     elements.append(system_message)
                     roles.append(Role.SYSTEM)
                 # Do *not* `continue` – we still need to encode this first message.
@@ -207,7 +242,9 @@ class Renderer:
             elif current_role == Role.ASSISTANT:
                 assistant_message = self._encode_assistant_message(
                     content=message["content"],
-                    tool_calls_str=message["tool_calls_str"] if "tool_calls_str" in message else None
+                    tool_calls_str=message["tool_calls_str"]
+                    if "tool_calls_str" in message
+                    else None,
                 )
                 elements.append(assistant_message)
                 roles.append(Role.ASSISTANT)
@@ -241,8 +278,10 @@ class Renderer:
         else:
             raise ValueError(f"Invalid role: {role}")
 
-    def _find_insert_tools_index(self, work_messages: List[Dict], placement: ToolPlacement) -> int:
-        insert_tools_idx = 0 # Default to insert tools at system message
+    def _find_insert_tools_index(
+        self, work_messages: List[Dict], placement: ToolPlacement
+    ) -> int:
+        insert_tools_idx = 0  # Default to insert tools at system message
         for i, message in enumerate(work_messages):
             if placement == ToolPlacement.SYSTEM:
                 insert_tools_idx = 0
@@ -258,16 +297,20 @@ class Renderer:
         return insert_tools_idx
 
     def _encode_system_message_default(self, tools=None) -> str:
-        logger.debug(f"[Template] Encoding system message default for template: {self.template.name}")
+        logger.debug(
+            f"[Template] Encoding system message default for template: {self.template.name}"
+        )
         if not self.template.system_policy.use_system_without_system_message:
             if tools is None:
                 return ""
             else:
                 # If tools are provided, use the system message with tools
                 pass
-        
+
         if self.template.system_policy.content_processor is not None:
-            system_message = self.template.system_policy.content_processor(self.template.system_message, tools=tools)
+            system_message = self.template.system_policy.content_processor(
+                self.template.system_message, tools=tools
+            )
         else:
             system_message = self.template.system_message
 
@@ -275,29 +318,41 @@ class Renderer:
             return self.template.system_template.format(system_message=system_message)
         else:
             if self.template.system_template_with_tools:
-                return self.template.system_template_with_tools.format(system_message=system_message, tools=tools)
+                return self.template.system_template_with_tools.format(
+                    system_message=system_message, tools=tools
+                )
             else:
-                return self.template.system_template.format(system_message=system_message)
+                return self.template.system_template.format(
+                    system_message=system_message
+                )
 
     def _encode_system_message(self, content, tools=None) -> str:
         # Handle both string content and list content formats
-        logger.debug(f"[Template] Encoding system message for template: {self.template.name}")
+        logger.debug(
+            f"[Template] Encoding system message for template: {self.template.name}"
+        )
         if isinstance(content, str):
             system_message = content
         else:
-            system_message = content[0]['text']
-            
+            system_message = content[0]["text"]
+
         if self.template.system_policy.content_processor is not None:
-            system_message = self.template.system_policy.content_processor(system_message, tools=tools)
+            system_message = self.template.system_policy.content_processor(
+                system_message, tools=tools
+            )
 
         if tools is None:
             return self.template.system_template.format(system_message=system_message)
         else:
             if self.template.system_template_with_tools is None:
-                return self.template.system_template.format(system_message=system_message)
+                return self.template.system_template.format(
+                    system_message=system_message
+                )
             else:
-                return self.template.system_template_with_tools.format(system_message=system_message, tools=tools)
-        
+                return self.template.system_template_with_tools.format(
+                    system_message=system_message, tools=tools
+                )
+
     def _encode_user_message_with_tools(self, content, tools: str) -> str:
         # Handle both string content and list content formats
         if isinstance(content, str):
@@ -308,14 +363,24 @@ class Renderer:
                 if item["type"] == "text":
                     text += item["text"]
                 elif item["type"] in ["image", "image_url"]:
-                    text += self.template.vision_start + self.template.image_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.image_token
+                        + self.template.vision_end
+                    )
                 elif item["type"] == "video":
-                    text += self.template.vision_start + self.template.video_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.video_token
+                        + self.template.vision_end
+                    )
                 else:
                     raise ValueError(f"Invalid message type: {item['type']}")
-        
+
         if self.template.user_template_with_tools:
-            user_message = self.template.user_template_with_tools.format(content=text, tools=tools)
+            user_message = self.template.user_template_with_tools.format(
+                content=text, tools=tools
+            )
         else:
             user_message = self.template.user_template.format(content=text)
         return user_message
@@ -330,16 +395,23 @@ class Renderer:
                 if item["type"] == "text":
                     text += item["text"]
                 elif item["type"] in ["image", "image_url"]:
-                    text += self.template.vision_start + self.template.image_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.image_token
+                        + self.template.vision_end
+                    )
                 elif item["type"] == "video":
-                    text += self.template.vision_start + self.template.video_token + self.template.vision_end
+                    text += (
+                        self.template.vision_start
+                        + self.template.video_token
+                        + self.template.vision_end
+                    )
                 else:
                     raise ValueError(f"Invalid message type: {item['type']}")
         user_message = self.template.user_template.format(content=text)
         return user_message
-    
-    def _encode_assistant_message(self, content, tool_calls_str=None) -> str:
 
+    def _encode_assistant_message(self, content, tool_calls_str=None) -> str:
         if isinstance(content, str):
             text = content
         else:
@@ -350,27 +422,33 @@ class Renderer:
             text = self.template.assistant_policy.content_processor(text)
 
         if "{tool_calls}" in self.template.assistant_template:
-            assistant_message = self.template.assistant_template.format(content=text, tool_calls=tool_calls_str if tool_calls_str else "")
+            assistant_message = self.template.assistant_template.format(
+                content=text, tool_calls=tool_calls_str if tool_calls_str else ""
+            )
         else:
             assistant_message = self.template.assistant_template.format(content=text)
-        
-        logger.debug(f"[Template] tool_calls_str: {tool_calls_str}, assistant_message: {assistant_message}")
-        
+
+        logger.debug(
+            f"[Template] tool_calls_str: {tool_calls_str}, assistant_message: {assistant_message}"
+        )
+
         return assistant_message
-    
+
     def _encode_tool_message(self, content) -> str:
         """
         Encode the tool message. By default, we use "observations" as placeholder for parallel tool calls and "observation" for single tool call.
         """
         # We have already preprocessed the messages, so content should be a string
-        assert isinstance(content, str), f"Content should be a string, but got {type(content)}"
+        assert isinstance(content, str), (
+            f"Content should be a string, but got {type(content)}"
+        )
 
         if "{observations}" in self.template.tool_template:
             tool_message = self.template.tool_template.format(observations=content)
         else:
             tool_message = self.template.tool_template.format(observation=content)
         return tool_message
-    
+
     def _encode_generation_prompt(self) -> str:
         # Use generation prompt if it is set
         if "{content}" in self.template.assistant_template:
@@ -380,26 +458,28 @@ class Renderer:
             else:
                 generation_prompt = prefix
         else:
-            raise ValueError(f"Assistant template {self.template.assistant_template} does not contain {{content}}")
+            raise ValueError(
+                f"Assistant template {self.template.assistant_template} does not contain {{content}}"
+            )
 
         return generation_prompt, prefix
-
 
     def _split_assistant_message(self, assistant_message: str) -> List[str]:
         # Split the assistant message into generation prefix, content, and generation suffix
         generation_prefix, prefix = self._encode_generation_prompt()
-        assert assistant_message.startswith(prefix), f"Assistant message {assistant_message} does not start with {prefix}"
-        content_suffix = assistant_message[len(prefix):]
+        assert assistant_message.startswith(prefix), (
+            f"Assistant message {assistant_message} does not start with {prefix}"
+        )
+        content_suffix = assistant_message[len(prefix) :]
         content = content_suffix
         suffix = ""
         for stop_word in self.template.stop_words:
             if stop_word in content_suffix:
                 stop_word_index = content_suffix.index(stop_word)
-                content = content_suffix[:stop_word_index+len(stop_word)]
-                suffix = content_suffix[stop_word_index+len(stop_word):]
+                content = content_suffix[: stop_word_index + len(stop_word)]
+                suffix = content_suffix[stop_word_index + len(stop_word) :]
                 break
         return prefix, content, suffix
-
 
     def _postprocess_elements(self, elements: List[str], roles) -> List[str]:
         # Flag non-assistant messages
@@ -434,7 +514,7 @@ class Renderer:
                         merged_elements.append(content)
                         merged_mask_flags.append(False)
                         prev_element = suffix
-                        prev_mask_flag = True # We need to mask the suffix
+                        prev_mask_flag = True  # We need to mask the suffix
                     # Both previous and current elements are non-assistant messages
                     else:
                         prev_element += element
@@ -473,49 +553,58 @@ class Qwen3Renderer(Renderer):
             text = content[0]["text"]
         return super()._encode_assistant_message(text, tool_calls_str)
 
-
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False, enable_thinking: bool = False) -> str:
+    def render(
+        self,
+        messages: List[Dict],
+        tools=None,
+        add_generation_prompt: bool = False,
+        enable_thinking: bool = False,
+    ) -> str:
         """Render the Qwen3 template with special thinking logic.
-        
+
         Args:
             messages: The list of messages
             tools: The list of tools
             add_generation_prompt: Whether to add the generation prefix
             enable_thinking: Whether to enable thinking mode
-            
+
         Returns:
             prompt: The final prompt string
             elements: The list of string *elements* that compose the prompt
             roles: The corresponding list of *roles* (used by downstream post-processing)
         """
-        
+
         # Step 1 – decide tool placement & clone messages
         work_messages = self._preprocess_messages(messages)
         logger.debug(f"[Qwen3Template] work_messages: {work_messages}")
-        work_messages, tools_str, insert_tools_idx = self._insert_tools(work_messages, tools)
-        
+        work_messages, tools_str, insert_tools_idx = self._insert_tools(
+            work_messages, tools
+        )
+
         # Step 2 – clean think content from all assistant messages except the last one
         work_messages = self._clean_think_content(work_messages)
-        
+
         # Step 2.5 – reformat think content in the last assistant message if it exists
         if work_messages and work_messages[-1].get("role") == "assistant":
             work_messages = self._reformat_last_assistant_think_content(work_messages)
-        
+
         # Step 3 – encode each conversation turn to text tokens
         elements, roles = self._encode_turns(work_messages, tools_str, insert_tools_idx)
-        
+
         # Step 4 – handle special generation prompt logic for Qwen3
         if add_generation_prompt:
-            self._maybe_add_generation_prompt_qwen3(elements, roles, enable_thinking, work_messages)
+            self._maybe_add_generation_prompt_qwen3(
+                elements, roles, enable_thinking, work_messages
+            )
         elif work_messages and work_messages[-1].get("role") == "assistant":
             # Add empty think tokens to the last assistant message if it doesn't already have think tags
             self._add_empty_think_to_last_assistant(elements, roles, work_messages)
-        
+
         # Concatenate the prompt
         prompt = "".join(elements)
         elements, mask_flags = self._postprocess_elements(elements, roles)
         return prompt, elements, mask_flags
-    
+
     def _clean_think_content(self, messages: List[Dict]) -> List[Dict]:
         """Remove all think content (<think>...</think>) from assistant messages and reformat existing think content."""
         cleaned_messages = []
@@ -523,7 +612,7 @@ class Qwen3Renderer(Renderer):
             if message.get("role") == "assistant" and i != len(messages) - 1:
                 cleaned_message = message.copy()
                 content = message["content"]
-                
+
                 if isinstance(content, str):
                     # Remove think content from string
                     cleaned_content = self._remove_think_tags(content)
@@ -533,55 +622,60 @@ class Qwen3Renderer(Renderer):
                     for item in content:
                         if item["type"] == "text":
                             cleaned_text = self._remove_think_tags(item["text"])
-                            cleaned_content.append({"type": "text", "text": cleaned_text})
+                            cleaned_content.append(
+                                {"type": "text", "text": cleaned_text}
+                            )
                         else:
                             cleaned_content.append(item)
                 elif content is None:
                     cleaned_content = ""
                 else:
                     raise ValueError(f"Invalid content type: {type(content)}")
-                
+
                 cleaned_message["content"] = cleaned_content
                 cleaned_messages.append(cleaned_message)
             else:
                 cleaned_messages.append(message)
-        
+
         return cleaned_messages
-    
+
     def _remove_think_tags(self, text: str) -> str:
         """Remove <think>...</think> tags from text."""
         import re
+
         # Remove <think>...</think> tags and their content
-        pattern = r'<think>.*?</think>'
-        return re.sub(pattern, '', text, flags=re.DOTALL)
-    
+        pattern = r"<think>.*?</think>"
+        return re.sub(pattern, "", text, flags=re.DOTALL)
+
     def _has_think_tags(self, text: str) -> bool:
         """Check if text contains <think> and </think> tags."""
-        return '<think>' in text and '</think>' in text
-    
+        return "<think>" in text and "</think>" in text
+
     def _reformat_think_content(self, text: str) -> str:
         """Reformat think content to ensure each think token ends with two newlines."""
         import re
-        
+
         def replace_think_content(match):
             think_content = match.group(1)
             # Ensure the think content ends with exactly two newlines
-            think_content = think_content.rstrip('\n')
-            return f'<think>\n{think_content}\n</think>\n\n'
-        
+            think_content = think_content.rstrip("\n")
+            return f"<think>\n{think_content}\n</think>\n\n"
+
         # Find and replace think tags, ensuring proper formatting
-        pattern = r'<think>(.*?)</think>'
+        pattern = r"<think>(.*?)</think>"
         return re.sub(pattern, replace_think_content, text, flags=re.DOTALL)
-    
-    def _reformat_last_assistant_think_content(self, messages: List[Dict]) -> List[Dict]:
+
+    def _reformat_last_assistant_think_content(
+        self, messages: List[Dict]
+    ) -> List[Dict]:
         """Reformat think content in the last assistant message."""
         if not messages or messages[-1].get("role") != "assistant":
             return messages
-        
+
         messages = messages.copy()
         last_message = messages[-1].copy()
         content = last_message["content"]
-        
+
         if isinstance(content, str):
             # Reformat think content in string
             last_message["content"] = self._reformat_think_content(content)
@@ -595,11 +689,17 @@ class Qwen3Renderer(Renderer):
                 else:
                     reformed_content.append(item)
             last_message["content"] = reformed_content
-        
+
         messages[-1] = last_message
         return messages
-    
-    def _maybe_add_generation_prompt_qwen3(self, elements: List[str], roles: List[Role], enable_thinking: bool, work_messages: List[Dict]):
+
+    def _maybe_add_generation_prompt_qwen3(
+        self,
+        elements: List[str],
+        roles: List[Role],
+        enable_thinking: bool,
+        work_messages: List[Dict],
+    ):
         """Append the generation prefix with special Qwen3 thinking logic."""
         if enable_thinking:
             # Use standard generation prompt
@@ -615,10 +715,12 @@ class Qwen3Renderer(Renderer):
                     has_existing_think = self._has_think_tags(content)
                 elif isinstance(content, list):
                     for item in content:
-                        if item.get("type") == "text" and self._has_think_tags(item["text"]):
+                        if item.get("type") == "text" and self._has_think_tags(
+                            item["text"]
+                        ):
                             has_existing_think = True
                             break
-            
+
             generation_prefix, prefix = self._encode_generation_prompt()
             if has_existing_think:
                 # Don't add empty think tokens if think tags already exist
@@ -627,12 +729,14 @@ class Qwen3Renderer(Renderer):
                 # Add empty think tokens after the generation prefix
                 elements.append(generation_prefix + "<think>\n\n</think>\n\n")
             roles.append(Role.ASSISTANT_PREFIX)
-    
-    def _add_empty_think_to_last_assistant(self, elements: List[str], roles: List[Role], work_messages: List[Dict]):
+
+    def _add_empty_think_to_last_assistant(
+        self, elements: List[str], roles: List[Role], work_messages: List[Dict]
+    ):
         """Add empty think tokens to the last assistant message if it doesn't already have think tags."""
         if not elements or not roles or not work_messages:
             return
-        
+
         # Check if the last message has think tags
         has_existing_think = False
         if work_messages[-1].get("role") == "assistant":
@@ -641,39 +745,47 @@ class Qwen3Renderer(Renderer):
                 has_existing_think = self._has_think_tags(content)
             elif isinstance(content, list):
                 for item in content:
-                    if item.get("type") == "text" and self._has_think_tags(item["text"]):
+                    if item.get("type") == "text" and self._has_think_tags(
+                        item["text"]
+                    ):
                         has_existing_think = True
                         break
-        
+
         # Only add empty think tokens if no existing think tags
         if not has_existing_think:
             generation_prefix, prefix = self._encode_generation_prompt()
-            
+
             # Find the last assistant element
             for i in range(len(elements) - 1, -1, -1):
                 if roles[i] == Role.ASSISTANT:
                     # Add empty think tokens at the start of the assistant message
-                    elements[i] = generation_prefix + "<think>\n\n</think>\n\n" + elements[i][len(generation_prefix):]
+                    elements[i] = (
+                        generation_prefix
+                        + "<think>\n\n</think>\n\n"
+                        + elements[i][len(generation_prefix) :]
+                    )
                     break
 
     def _split_assistant_message(self, assistant_message: str) -> List[str]:
         # Split the assistant message into generation prefix, content, and generation suffix
         generation_prefix, prefix = self._encode_generation_prompt()
-        assert assistant_message.startswith(prefix), f"Assistant message {assistant_message} does not start with {prefix}"
+        assert assistant_message.startswith(prefix), (
+            f"Assistant message {assistant_message} does not start with {prefix}"
+        )
 
         # We need to detect whether the assistant message starts with empty think tokens
         # If so, we need to set empty think tokens as non-assistant message
         if assistant_message.startswith(generation_prefix + "<think>\n\n</think>\n\n"):
             generation_prefix = generation_prefix + "<think>\n\n</think>\n\n"
 
-        content_suffix = assistant_message[len(generation_prefix):]
+        content_suffix = assistant_message[len(generation_prefix) :]
         content = content_suffix
         suffix = ""
         for stop_word in self.template.stop_words:
             if stop_word in content_suffix:
                 stop_word_index = content_suffix.index(stop_word)
-                content = content_suffix[:stop_word_index+len(stop_word)]
-                suffix = content_suffix[stop_word_index+len(stop_word):]
+                content = content_suffix[: stop_word_index + len(stop_word)]
+                suffix = content_suffix[stop_word_index + len(stop_word) :]
                 break
         return generation_prefix, content, suffix
 
@@ -695,11 +807,11 @@ class HFRenderer(Renderer):
         messages: List[Dict],
         turn_idx: int,
         prev_prompt: str,
-        tools: List[Dict]=None,
-        **kwargs
+        tools: List[Dict] = None,
+        **kwargs,
     ) -> Tuple[str, str, bool]:
         """Render a single message turn and extract new content.
-        
+
         Args:
             messages: All messages
             turn_idx: Index of current turn to render
@@ -707,60 +819,80 @@ class HFRenderer(Renderer):
             prev_has_gen_prompt: Whether prev_prompt ends with a generation prompt
             tools: Tools to include (only used for first turn)
             **kwargs: Additional kwargs for apply_chat_template
-            
+
         Returns:
             current_prompt: The rendered prompt up to this turn (without gen prompt)
             new_element: The new content added in this turn (empty string if none)
             is_assistant: Whether this turn is an assistant message
         """
-        current_messages = messages[:turn_idx+1]
+        current_messages = messages[: turn_idx + 1]
         current_tools = tools
-        
+
         # Always render without gen prompt to get clean content
         # When prev_has_gen_prompt is True, prev_prompt includes the gen prompt (assistant prefix),
         # so comparing prev_prompt to current_prompt will correctly extract only the content
         current_prompt = self.template.tokenizer.apply_chat_template(
-            current_messages, tokenize=False, tools=current_tools, add_generation_prompt=False, **kwargs
+            current_messages,
+            tokenize=False,
+            tools=current_tools,
+            add_generation_prompt=False,
+            **kwargs,
         )
-        
+
         # Extract new content: difference between prev_prompt and current_prompt
         # If prev_has_gen_prompt, prev_prompt ends with gen prompt, so we get content after it
         # Otherwise, we get the full new turn content
         prefix_len = self._find_prefix_length(prev_prompt, current_prompt)
         new_element = current_prompt[prefix_len:]
-        
+
         is_assistant = messages[turn_idx].get("role") == "assistant"
         return current_prompt, new_element, is_assistant
-    
-    def _add_generation_prompt(self, messages: List[Dict], turn_idx: int, current_prompt: str,
-                               tools=None, **kwargs) -> Tuple[str, str]:
+
+    def _add_generation_prompt(
+        self,
+        messages: List[Dict],
+        turn_idx: int,
+        current_prompt: str,
+        tools=None,
+        **kwargs,
+    ) -> Tuple[str, str]:
         """Add generation prompt after a turn if the next turn is assistant.
-        
+
         Returns:
             gen_prompt: The prompt with generation prompt added
             gen_element: The generation prompt element to add (empty string if none)
         """
-        current_messages = messages[:turn_idx+1]
+        current_messages = messages[: turn_idx + 1]
         current_tools = tools
-        
+
         gen_prompt = self.template.tokenizer.apply_chat_template(
-            current_messages, tokenize=False, tools=current_tools, add_generation_prompt=True, **kwargs
+            current_messages,
+            tokenize=False,
+            tools=current_tools,
+            add_generation_prompt=True,
+            **kwargs,
         )
         prefix_len = self._find_prefix_length(current_prompt, gen_prompt)
         gen_element = gen_prompt[prefix_len:]
         return gen_prompt, gen_element
-    
-    def render(self, messages: List[Dict], tools=None, add_generation_prompt: bool = False, **kwargs) -> Tuple[str, List[str], List[bool]]:
+
+    def render(
+        self,
+        messages: List[Dict],
+        tools=None,
+        add_generation_prompt: bool = False,
+        **kwargs,
+    ) -> Tuple[str, List[str], List[bool]]:
         """
         Render the HF template by progressively rendering messages to identify
         elements and their mask flags.
-        
+
         Only renders at key boundaries:
         - Before assistant turns (to get generation prompts)
         - At assistant turns (to get assistant content)
         This handles templates that combine successive messages (e.g., tool messages)
         and reduces computation.
-        
+
         Returns:
             prompt: The final prompt string
             elements: The list of string *elements* that compose the prompt
@@ -768,48 +900,62 @@ class HFRenderer(Renderer):
         """
         if not messages:
             prompt = self.template.tokenizer.apply_chat_template(
-                [], tokenize=False, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+                [],
+                tokenize=False,
+                tools=tools,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
             )
-            return prompt, [prompt], [True]  # Generation prompt or empty prompt is masked
-        
+            return (
+                prompt,
+                [prompt],
+                [True],
+            )  # Generation prompt or empty prompt is masked
+
         elements: List[str] = []
         mask_flags: List[bool] = []
         prev_prompt = ""
-        prev_has_gen_prompt = False
-        
+        # prev_has_gen_prompt = False
+
         # Only render at key boundaries:
         # 1. Before assistant turns (to get generation prompts)
         # 2. At assistant turns (to get assistant content)
         # 3. At the last turn (to capture content after last assistant, e.g., tool messages)
         # This handles templates that combine successive messages (e.g., tool messages)
-        assistant_indices = [i for i, msg in enumerate(messages) if msg.get("role") == "assistant"]
+        assistant_indices = [
+            i for i, msg in enumerate(messages) if msg.get("role") == "assistant"
+        ]
         render_indices = set()
-        
+
         # Add indices: assistant turns and turns before assistant turns
         for idx in assistant_indices:
             render_indices.add(idx)  # Assistant turn itself
             if idx > 0:
                 render_indices.add(idx - 1)  # Turn before assistant
-        
+
         # Add last turn if not already covered (to capture tool messages after last assistant)
         if messages and len(messages) - 1 not in render_indices:
             render_indices.add(len(messages) - 1)
-        
+
         # Process only at key boundaries (in order)
         for i in sorted(render_indices):
-            is_assistant = messages[i].get("role") == "assistant"
-            next_is_assistant = (i + 1 < len(messages) and messages[i + 1].get("role") == "assistant")
-            
+            # is_assistant = messages[i].get("role") == "assistant"
+            next_is_assistant = (
+                i + 1 < len(messages) and messages[i + 1].get("role") == "assistant"
+            )
+
             # Render this turn and extract new content
             current_prompt, new_element, turn_is_assistant = self._render_message_turn(
                 messages, i, prev_prompt, tools, **kwargs
             )
-            
+
             # Add new content element
             if new_element:
                 elements.append(new_element)
-                mask_flags.append(not turn_is_assistant)  # True for non-assistant, False for assistant
-            
+                mask_flags.append(
+                    not turn_is_assistant
+                )  # True for non-assistant, False for assistant
+
             # If next turn is assistant, add generation prompt
             if next_is_assistant:
                 gen_prompt, gen_element = self._add_generation_prompt(
@@ -819,15 +965,19 @@ class HFRenderer(Renderer):
                     elements.append(gen_element)
                     mask_flags.append(True)  # Generation prompt is masked
                 prev_prompt = gen_prompt
-                prev_has_gen_prompt = True
+                # prev_has_gen_prompt = True
             else:
                 prev_prompt = current_prompt
-                prev_has_gen_prompt = False
-        
+                # prev_has_gen_prompt = False
+
         # Handle final generation prompt for inference
         if add_generation_prompt:
             gen_prompt = self.template.tokenizer.apply_chat_template(
-                messages, tokenize=False, tools=tools, add_generation_prompt=True, **kwargs
+                messages,
+                tokenize=False,
+                tools=tools,
+                add_generation_prompt=True,
+                **kwargs,
             )
             prefix_len = self._find_prefix_length(prev_prompt, gen_prompt)
             gen_element = gen_prompt[prefix_len:]
@@ -838,7 +988,11 @@ class HFRenderer(Renderer):
         else:
             # Render final prompt with all messages and tools to ensure tools are included
             final_prompt = self.template.tokenizer.apply_chat_template(
-                messages, tokenize=False, tools=tools, add_generation_prompt=False, **kwargs
+                messages,
+                tokenize=False,
+                tools=tools,
+                add_generation_prompt=False,
+                **kwargs,
             )
-        
+
         return final_prompt, elements, mask_flags

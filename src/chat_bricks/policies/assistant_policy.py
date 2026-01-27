@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
 import dataclasses
-import datetime
+from abc import ABC, abstractmethod
 from typing import Callable
+
 
 @dataclasses.dataclass
 class AssistantPolicy:
@@ -17,8 +17,8 @@ class AssistantContentProcessor(ABC):
     def jinja(self) -> str:
         raise NotImplementedError
 
-class Qwen25AssistantContentProcessor(AssistantContentProcessor):
 
+class Qwen25AssistantContentProcessor(AssistantContentProcessor):
     def __call__(self, content: str) -> str:
         if content is None or content == "":
             return ""

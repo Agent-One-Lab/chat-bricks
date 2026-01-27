@@ -51,7 +51,7 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt, e
     # Filter invalid combinations
     if add_generation_prompt and messages[-1]['role'] == 'assistant':
         return
-    
+
     template_tokenizer_mapping = {
         "qwen3": "Qwen/Qwen3-32B",
         "qwen3-instruct": "Qwen/Qwen3-4B-Instruct-2507",
@@ -59,7 +59,7 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt, e
     tokenizer = AutoTokenizer.from_pretrained(template_tokenizer_mapping[template], trust_remote_code=True)
 
     is_equal, is_equal_between_implemented_prompts, is_equal_between_jinja_prompts, official_prompt, implemented_prompt, implemented_jinja_prompt, highlighted_prompt = compare_hf_template(tokenizer, template, messages=messages, tools=tools,add_generation_prompt=add_generation_prompt, enable_thinking=enable_thinking)
-    
+
     print(f"Official prompt:\n\n{official_prompt}")
     print(f"Implemented prompt:\n\n{implemented_prompt}")
     print(f"Highlighted prompt:\n\n{highlighted_prompt}")
@@ -67,5 +67,3 @@ def test_chat_template_equal(template, messages, tools, add_generation_prompt, e
     assert is_equal_between_jinja_prompts, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}\n\nJinja prompt:\n\n{implemented_jinja_prompt}"
     # print(f"Official prompt:\n\n{official_prompt}")
     # print(f"Highlighted prompt:\n\n{highlighted_prompt}")
-
-

@@ -1,14 +1,13 @@
-from typing import Dict, List
-from pathlib import Path
-from urllib.parse import urlparse
 import base64
 import io
-from PIL import Image
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+from urllib.parse import urlparse
+
 import requests
-from typing import Union
-import os
-from typing import Optional
+from PIL import Image
 from transformers import AutoConfig
+
 
 def open_image_from_any(src: str | Image.Image, *, timeout: int = 10) -> Image.Image:
     """
@@ -18,8 +17,8 @@ def open_image_from_any(src: str | Image.Image, *, timeout: int = 10) -> Image.I
     ----------
     src : str
         The image source.  It can be:
-          • path to an image on disk  
-          • http(s) URL  
+          • path to an image on disk
+          • http(s) URL
           • plain base-64 or data-URI base-64
     timeout : int, optional
         HTTP timeout (s) when downloading from a URL.
@@ -85,7 +84,7 @@ def image_to_data_uri(img: Union[Image.Image, str, dict], fmt=None) -> str:
         # Check if it's already a data URI
         if img.startswith("data:image/"):
             return img
-        
+
         # Check if it's a URL
         parsed = urlparse(img)
         if parsed.scheme in {"http", "https"}:
@@ -106,7 +105,7 @@ def image_to_data_uri(img: Union[Image.Image, str, dict], fmt=None) -> str:
                 pil_image.save(buf, format=detected_fmt)
                 b64 = base64.b64encode(buf.getvalue()).decode()
                 return f"data:image/{detected_fmt.lower()};base64,{b64}"
-            except Exception as e:
+            except Exception:
                 # If open_image_from_any fails, return as is (might be raw base64)
                 return img
     elif isinstance(img, bytes):
@@ -116,24 +115,26 @@ def image_to_data_uri(img: Union[Image.Image, str, dict], fmt=None) -> str:
     else:
         raise ValueError(f"Invalid image type: {type(img)}")
 
+
 def detect_image_format_from_bytes(img_bytes: bytes) -> str:
     """Detect image format from bytes using magic numbers"""
     if len(img_bytes) < 4:
         return "PNG"  # Default fallback
-    
+
     # Check magic bytes for common formats
-    if img_bytes.startswith(b'\xff\xd8\xff'):
+    if img_bytes.startswith(b"\xff\xd8\xff"):
         return "JPEG"
-    elif img_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+    elif img_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         return "PNG"
-    elif img_bytes.startswith(b'GIF87a') or img_bytes.startswith(b'GIF89a'):
+    elif img_bytes.startswith(b"GIF87a") or img_bytes.startswith(b"GIF89a"):
         return "GIF"
-    elif img_bytes.startswith(b'RIFF') and img_bytes[8:12] == b'WEBP':
+    elif img_bytes.startswith(b"RIFF") and img_bytes[8:12] == b"WEBP":
         return "WEBP"
-    elif img_bytes.startswith(b'BM'):
+    elif img_bytes.startswith(b"BM"):
         return "BMP"
     else:
         return "PNG"  # Default fallback
+
 
 def image_to_pil(img: Union[Image.Image, str, dict]) -> Image.Image:
     if isinstance(img, str):
@@ -143,9 +144,11 @@ def image_to_pil(img: Union[Image.Image, str, dict]) -> Image.Image:
     else:
         return img
 
+
 def _is_jupyter() -> bool:
     try:
         from IPython import get_ipython
+
         shell = get_ipython()
         if not shell:
             return False
@@ -157,8 +160,8 @@ def _is_jupyter() -> bool:
     except Exception:
         return False
 
-def _unicode_half_block(image: Image.Image, width: int):
 
+def _unicode_half_block(image: Image.Image, width: int):
     # if columns is None:
     #     try:
     #         columns = shutil.get_terminal_size((80, 24)).columns
@@ -181,9 +184,12 @@ def _unicode_half_block(image: Image.Image, width: int):
             line += f"\033[38;2;{top[0]};{top[1]};{top[2]}m\033[48;2;{bottom[0]};{bottom[1]};{bottom[2]}m▀"
         print(line + reset)
 
+
 def _jupyter_display(image: Image.Image):
     from IPython.display import display
+
     display(image)
+
 
 def display_image(
     path_or_image: str | Image.Image,
@@ -247,14 +253,13 @@ def display_messages(messages: List[Dict]):
 
 
 def is_vlm_by_config(cfg):
-    keywords = [
-        "vision", "image", "mm_", "patch", "pixel",
-        "visual", "clip", "vit"
-    ]
+    keywords = ["vision", "image", "mm_", "patch", "pixel", "visual", "clip", "vit"]
     return any(k in cfg.to_dict().keys() for k in keywords)
+
 
 # Cache for is_vision_lm results to avoid repeated config loading
 _VISION_LM_CACHE: Dict[str, bool] = {}
+
 
 def is_vision_lm(model_name: str) -> bool:
     """
@@ -269,9 +274,8 @@ def is_vision_lm(model_name: str) -> bool:
     """
     if model_name in _VISION_LM_CACHE:
         return _VISION_LM_CACHE[model_name]
-    
+
     config = AutoConfig.from_pretrained(model_name)
     result = is_vlm_by_config(config)
     _VISION_LM_CACHE[model_name] = result
     return result
-
