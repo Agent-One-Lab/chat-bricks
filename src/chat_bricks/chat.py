@@ -27,7 +27,7 @@ class Chat:
             tokenizer: The tokenizer to use for the chat.
         """
         if isinstance(template, str):
-            self.template = get_template(template)
+            self.template = get_template(template, tokenizer=tokenizer)
         else:
             self.template = template
 
@@ -173,6 +173,7 @@ class Chat:
         add_generation_prompt=False,
         tools=None,
         processor=None,
+        train_on_last_turn_only=False,
         **kwargs,
     ) -> List[int]:
         """Tokenize the messages.
@@ -208,6 +209,7 @@ class Chat:
             tools=tools,
             add_generation_prompt=add_generation_prompt,
             processor=processor,
+            train_on_last_turn_only=train_on_last_turn_only,
             **kwargs,
         )
 

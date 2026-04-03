@@ -14,13 +14,13 @@ def register_template(template: Template, override: bool = False):
     TEMPLATES[template.name] = template
 
 
-def get_template(name: str) -> Template:
+def get_template(name: str, tokenizer=None) -> Template:
     """Get a conversation template."""
     if name in TEMPLATES:
         return TEMPLATES[name].copy()
     else:
         # Use HF's tokenizer chat template
-        return HFTemplate(name)
+        return HFTemplate(name, tokenizer=tokenizer)
 
 
 # Register built-in templates on import so get_template can find them.

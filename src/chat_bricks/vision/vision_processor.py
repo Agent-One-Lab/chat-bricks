@@ -299,7 +299,6 @@ class PatchBasedProcessor(VisionProcessor):
 
             # Assume it's a file path
             else:
-                print(f"Loading image from file path: {image_input}")
                 return Image.open(image_input)
 
         # Handle bytes

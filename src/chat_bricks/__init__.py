@@ -11,7 +11,7 @@ from .registry import get_template, register_template
 from .templates import Template
 from .utils import (compare_hf_template, display_messages, image_to_data_uri,
                     tokenize_conversation, tokenize_conversations,
-                    validate_messages_for_template)
+                    validate_messages_for_template, split_messages_with_assistant)
 from .vision import VisionProcessor, VisionProcessorConfig, register_processor
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "get_template",
     "register_template",
     "Template",
+    "split_messages_with_assistant",
     "HFTemplate",
     "Qwen3Template",
     "VisionProcessor",

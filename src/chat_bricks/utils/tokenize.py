@@ -76,6 +76,7 @@ def tokenize_conversation(
     processor=None,
     return_tensors="pt",
     ignore_tool_calls=False,
+    train_on_last_turn_only=False,
     **kwargs,  # Additional kwargs for the chat template, e.g. enable_thinking
 ):
     """
@@ -108,7 +109,7 @@ def tokenize_conversation(
         tokenizer=tokenizer,
         ignore_tool_calls=ignore_tool_calls,
     )
-    inputs = chat.tokenize(tokenizer, tools=tools, processor=processor, **kwargs)
+    inputs = chat.tokenize(tokenizer, tools=tools, processor=processor, train_on_last_turn_only=train_on_last_turn_only, **kwargs)
 
     if max_length is not None:
         inputs["input_ids"] = inputs["input_ids"][:, :max_length]
@@ -132,6 +133,7 @@ def tokenize_conversations(
     padding_side="right",
     concatenate_mm_inputs=False,
     ignore_tool_calls=False,
+    train_on_last_turn_only=False,
     **kwargs,
 ):
     batch_input_ids = []
@@ -153,6 +155,7 @@ def tokenize_conversations(
             processor=processor,
             return_tensors=return_tensors,
             ignore_tool_calls=ignore_tool_calls,
+            train_on_last_turn_only=train_on_last_turn_only,
             **kwargs,
         )
         batch_input_ids.append(inputs["input_ids"].squeeze(0))

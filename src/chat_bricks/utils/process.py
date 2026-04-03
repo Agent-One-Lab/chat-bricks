@@ -1,5 +1,6 @@
 import re
-from typing import Any
+from typing import Any, List
+import copy
 
 from ..vision import get_processor
 
@@ -74,12 +75,12 @@ def convert_inputs_to_vision_inputs(
     return final_inputs
 
 
-def extract_vision_inputs_from_messages(messages: list) -> tuple[list, list]:
+def extract_vision_inputs_from_messages(messages: List) -> tuple[List, List]:
     """Extract images and videos from messages"""
     images, videos = [], []
 
     for message in messages:
-        if isinstance(message.get("content"), list):
+        if isinstance(message.get("content"), List):
             for item in message["content"]:
                 if item.get("type") in ["image", "image_url"]:
                     if "image" in item:
@@ -269,3 +270,12 @@ def validate_messages_for_template(
                 return False
 
     return True
+
+def split_messages_with_assistant(messages: List) -> List:
+    """Split messages with assistant"""
+    splited_messages_list = []
+    for i, message in enumerate(messages):
+        if message["role"] == "assistant":
+            splited_messages_list.append(copy.deepcopy(messages[:i+1]))
+    return splited_messages_list
+    

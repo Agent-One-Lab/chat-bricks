@@ -12,7 +12,6 @@ from .jinja_generator import JinjaGenerator
 from .renderer import Qwen3Renderer, Renderer
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 @dataclasses.dataclass
@@ -146,8 +145,12 @@ class Template:
             return False
 
     def render(
-        self, messages: List[Dict], tools=None, add_generation_prompt: bool = False
-    ) -> str:
+        self,
+        messages: List[Dict],
+        tools=None,
+        add_generation_prompt: bool = False,
+        train_on_last_turn_only: bool = False,
+    ) -> Tuple[str, List[str], List[bool]]:
         """
         Render the messages to a string prompt by applying the chat template. The render logic is implemented in the `Renderer` class.
 
@@ -157,9 +160,28 @@ class Template:
             add_generation_prompt: Whether to add the generation prompt
 
         Returns:
-            The string formatted prompt for the messages after applying the chat template.
+            prompt: The final prompt string
+            elements: The list of string *elements* that compose the prompt
+            mask_flags: The list of mask flags for the elements
         """
-        return Renderer(self).render(messages, tools, add_generation_prompt)
+        prompt, elements, mask_flags = Renderer(self).render(
+            messages, tools, add_generation_prompt
+        )
+
+        # If training only on the last turn, keep only the last masked segment
+        # (where mask_flag is True) as 1 and set all previous masked segments to 0.
+        if train_on_last_turn_only and len(mask_flags) > 0:
+            last_one_idx = -1
+            for i in range(len(mask_flags) - 1, -1, -1):
+                if not mask_flags[i]:
+                    last_one_idx = i
+                    break
+
+            if last_one_idx != -1:
+                for i in range(0, last_one_idx):
+                    mask_flags[i] = True
+
+        return prompt, elements, mask_flags
 
     def encode(
         self,
@@ -169,6 +191,7 @@ class Template:
         tools=None,
         add_generation_prompt=False,
         processor=None,
+        train_on_last_turn_only=False,
         **kwargs,
     ) -> str:
         """Encode the messages to token ids.
@@ -196,6 +219,7 @@ class Template:
                 tools,
                 add_generation_prompt=add_generation_prompt,
                 processor=processor,
+                train_on_last_turn_only=train_on_last_turn_only,
                 **kwargs,
             )
         else:
@@ -206,6 +230,7 @@ class Template:
                 return_tensors,
                 tools,
                 add_generation_prompt=add_generation_prompt,
+                train_on_last_turn_only=train_on_last_turn_only,
                 **kwargs,
             )
 
@@ -216,12 +241,13 @@ class Template:
         return_tensors: str = None,
         tools=None,
         add_generation_prompt=False,
+        train_on_last_turn_only=False,
         **kwargs,
     ) -> str:
         logger.debug(f"[Template] Encoding standard for template: {self.name}")
         """Standard encoding without vision support"""
         prompt, elements, mask_flags = self.render(
-            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
         input_ids = []
         attention_mask = []
@@ -265,6 +291,7 @@ class Template:
         tools=None,
         add_generation_prompt=False,
         processor=None,
+        train_on_last_turn_only=False,
         **kwargs,
     ) -> str:
         logger.debug(
@@ -283,7 +310,7 @@ class Template:
 
         # Get base prompt and mask information
         prompt, elements, mask_flags = self.render(
-            messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
+            messages, tools=tools, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
 
         # Extract vision inputs
@@ -440,9 +467,14 @@ class HFTemplate(Template):
     template which deletes the previous thinking content).
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, tokenizer=None):
         super().__init__(name=name)
-        self.tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+
+        if not tokenizer:
+            self.tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+        else:
+            self.tokenizer = tokenizer
+        
         if self.tokenizer.chat_template is None:
             raise ValueError(
                 f"Tokenizer from {name} does not have a chat_template. Cannot use HFTemplate."
