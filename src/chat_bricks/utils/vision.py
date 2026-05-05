@@ -252,9 +252,53 @@ def display_messages(messages: List[Dict]):
             print(message["tool_calls"])
 
 
+def _collect_config_keys(config_dict: dict) -> set[str]:
+    """Collect all keys from nested config dict."""
+    keys = set()
+    stack = [config_dict]
+    while stack:
+        current = stack.pop()
+        if not isinstance(current, dict):
+            continue
+        for key, value in current.items():
+            keys.add(key)
+            if isinstance(value, dict):
+                stack.append(value)
+    return keys
+
+
 def is_vlm_by_config(cfg):
-    keywords = ["vision", "image", "mm_", "patch", "pixel", "visual", "clip", "vit"]
-    return any(k in cfg.to_dict().keys() for k in keywords)
+    config_keys = _collect_config_keys(cfg.to_dict())
+
+    # Secondary detector: explicit multimodal/vision config signals.
+    vision_related_keys = {
+        "vision_config",
+        "image_config",
+        "video_config",
+        "visual_config",
+        "mm_config",
+        "multi_modal_config",
+        "multimodal_config",
+        "image_token_id",
+        "video_token_id",
+        "vision_start_token_id",
+        "vision_end_token_id",
+        "image_start_token_id",
+        "image_end_token_id",
+        "video_start_token_id",
+        "video_end_token_id",
+        "vision_token_id",
+        "visual_token_id",
+        "pixel_values",
+        "image_size",
+        "patch_size",
+        "spatial_merge_size",
+        "temporal_patch_size",
+        "num_image_tokens",
+        "num_video_tokens",
+    }
+
+    return any(key in config_keys for key in vision_related_keys)
 
 
 # Cache for is_vision_lm results to avoid repeated config loading

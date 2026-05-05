@@ -31,9 +31,9 @@ class Chat:
         else:
             self.template = template
 
-        # Default to use vision template because we use vision format messages by default
-        # If we use HF template, we need to check if the model is a vision language model
-        # Because the hf tokenizer expects textual model message format.
+        # Default to use vision template because we use vision format messages by default.
+        # For HF template, detect model capability to decide whether to keep vision-format
+        # content blocks or convert text-only list blocks to plain strings.
         if isinstance(self.template, HFTemplate):
             self.is_vision_template = is_vision_lm(self.template.name)
         else:
