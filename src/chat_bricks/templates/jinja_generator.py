@@ -61,25 +61,21 @@ class JinjaGenerator:
     def _jinja_header_constants(self) -> List[str]:
         """Return Jinja `set` statements for all constant strings."""
 
-        # Compute default system message considering content processor
+        # Compute default system message considering content processor. The
+        # ``system_template`` may include ``{tools}`` / ``{skills}`` placeholders
+        # (new section-template pattern); pass empty strings so the no-tools
+        # default renders cleanly.
         if self.template.system_policy.content_processor is not None:
-            # Apply content processor to system message
             processed_system_message = self.template.system_policy.content_processor(
                 self.template.system_message, tools=None
-            )  # TODO: tools is not used here, but we need to pass it for consistency
+            )
             default_system = self.template.system_template.format(
-                system_message=processed_system_message
+                system_message=processed_system_message, tools="", skills=""
             )
         else:
             default_system = self.template.system_template.format(
-                system_message=self.template.system_message
+                system_message=self.template.system_message, tools="", skills=""
             )
-
-        system_template_with_tools_raw = (
-            self.template.system_template_with_tools
-            if self.template.system_template_with_tools
-            else None
-        )
 
         # Split templates
         try:
@@ -90,14 +86,14 @@ class JinjaGenerator:
                 "`user_template` / `assistant_template` must contain `{content}` placeholder"
             ) from exc
 
-        if self.template.tool_template:
-            if "{observations}" in self.template.tool_template:
-                t_pref, t_suff = self.template.tool_template.split("{observations}")
-            elif "{observation}" in self.template.tool_template:
-                t_pref, t_suff = self.template.tool_template.split("{observation}")
+        if self.template.observations_template:
+            if "{observations}" in self.template.observations_template:
+                t_pref, t_suff = self.template.observations_template.split("{observations}")
+            elif "{observation}" in self.template.observations_template:
+                t_pref, t_suff = self.template.observations_template.split("{observation}")
             else:
                 raise ValueError(
-                    f"Invalid tool template: {self.template.tool_template}"
+                    f"Invalid observations template: {self.template.observations_template}"
                 )
         else:
             t_pref, t_suff = "", ""
@@ -119,10 +115,10 @@ class JinjaGenerator:
             "{tool_calls}" in self.template.assistant_template
         )
 
-        # Check if tool template uses observations (plural) or observation (singular)
+        # Check if observations template uses observations (plural) or observation (singular)
         uses_observations = (
-            "{observations}" in self.template.tool_template
-            if self.template.tool_template
+            "{observations}" in self.template.observations_template
+            if self.template.observations_template
             else False
         )
 
@@ -144,17 +140,17 @@ class JinjaGenerator:
             f"{{% set _uses_observations = {uses_observations} %}}",
         ]
 
-        if self.template.tool_template:
+        if self.template.observations_template:
             header.append(
-                f"{{% set _tool_template = {self.template.tool_template!r} %}}"
+                f"{{% set _observations_template = {self.template.observations_template!r} %}}"
             )
         else:
-            header.append("{% set _tool_template = '' %}")
+            header.append("{% set _observations_template = '' %}")
 
-        # Add tool_call_template if it exists
-        if self.template.tool_call_template:
+        # Add single_tool_call_template if it exists
+        if self.template.single_tool_call_template:
             header.append(
-                f"{{% set _tool_call_template = {self.template.tool_call_template!r} %}}"
+                f"{{% set _single_tool_call_template = {self.template.single_tool_call_template!r} %}}"
             )
 
         # Add tool_calls_template if it exists
@@ -165,11 +161,55 @@ class JinjaGenerator:
         else:
             header.append("{% set _tool_calls_template = None %}")
 
-        # Add tool_observation_template if it exists
-        if self.template.tool_observation_template:
+        # Add single_observation_template if it exists
+        if self.template.single_observation_template:
             header.append(
-                f"{{% set _tool_observation_template = {self.template.tool_observation_template!r} %}}"
+                f"{{% set _single_observation_template = {self.template.single_observation_template!r} %}}"
             )
+
+        # Tools / skills section templates (new section-template pattern).
+        # ``.format()``-escaped literal braces (``{{`` / ``}}``) are unescaped
+        # because the Jinja path uses ``replace()`` rather than ``.format()``.
+        if self.template.tools_template:
+            tools_tpl_unescaped = self.template.tools_template.replace("{{", "{").replace("}}", "}")
+            header.append(
+                f"{{% set _tools_template = {tools_tpl_unescaped!r} %}}"
+            )
+        else:
+            header.append("{% set _tools_template = None %}")
+        if self.template.single_tool_template:
+            single_tool_unescaped = self.template.single_tool_template.replace("{{", "{").replace("}}", "}")
+            header.append(
+                f"{{% set _single_tool_template = {single_tool_unescaped!r} %}}"
+            )
+        else:
+            header.append("{% set _single_tool_template = None %}")
+
+        # Skills section templates. When set, the generated chat template will
+        # honor a ``skills`` Jinja variable (caller passes it via
+        # ``tokenizer.apply_chat_template(messages, tools=..., skills=...)`` or
+        # vLLM's ``chat_template_kwargs``). When the template doesn't define a
+        # ``skills_template``, the ``skills`` variable is ignored.
+        if self.template.skills_template:
+            skills_tpl_unescaped = self.template.skills_template.replace("{{", "{").replace("}}", "}")
+            header.append(
+                f"{{% set _skills_template = {skills_tpl_unescaped!r} %}}"
+            )
+        else:
+            header.append("{% set _skills_template = None %}")
+        single_skill = (
+            self.template.single_skill_template
+            or self.template.skill_policy.single_skill_template
+        )
+        if single_skill:
+            single_skill_unescaped = single_skill.replace("{{", "{").replace("}}", "}")
+            header.append(
+                f"{{% set _single_skill_template = {single_skill_unescaped!r} %}}"
+            )
+        else:
+            header.append("{% set _single_skill_template = None %}")
+        skill_joiner = self.template.skill_policy.joiner
+        header.append(f"{{% set _skill_joiner = {skill_joiner!r} %}}")
 
         # Add generation_prompt if it exists
         if self.template.generation_prompt:
@@ -178,11 +218,6 @@ class JinjaGenerator:
             )
         else:
             header.append("{% set _generation_prompt = None %}")
-
-        if system_template_with_tools_raw:
-            header.append(
-                f"{{% set _system_template_with_tools = {system_template_with_tools_raw!r} %}}"
-            )
 
         # Add user template with tools if it exists
         if self.template.user_template_with_tools:
@@ -292,57 +327,76 @@ class JinjaGenerator:
         ]
 
     def _jinja_system_block(self) -> List[str]:
-        """Return Jinja code that handles the system message logic."""
+        """Return Jinja code that handles the system message logic.
+
+        Section-template pattern: build a ``_tools_block`` and ``_skills_block``,
+        then substitute them into ``system_template``'s ``{tools}`` / ``{skills}``
+        placeholders. Each block is the empty string when its input is absent.
+
+        Skills are passed in as a Jinja variable named ``skills`` — a list whose
+        entries each expose ``name`` and ``description``. From an HF tokenizer
+        call: ``tokenizer.apply_chat_template(messages, tools=..., skills=...)``.
+        From vLLM's OpenAI-compat server: pass them via
+        ``extra_body={"chat_template_kwargs": {"skills": ...}}``.
+        """
+
+        # Build the inner tools text + wrap with tools_template (or leave empty).
+        tools_block_setup = [
+            "{% if tools %}",
+            "{% set _formatted_tools = _fmt_tools(tools) %}",
+            "{% if _tools_template is not none %}",
+            "{% set _tools_block = _tools_template | replace('{tools}', _formatted_tools) %}",
+            "{% else %}",
+            "{% set _tools_block = _formatted_tools %}",
+            "{% endif %}",
+            "{% else %}",
+            "{% set _tools_block = '' %}",
+            "{% endif %}",
+        ]
+
+        # Build the inner skills text + wrap with skills_template.
+        # ``skills is defined`` guards against callers that omit the variable.
+        skills_block_setup = [
+            "{% if skills is defined and skills and _skills_template is not none and _single_skill_template is not none %}",
+            "{% set _sb_ns = namespace(inner='') %}",
+            "{% for skill in skills %}",
+            "{% set _row = _single_skill_template | replace('{name}', skill['name']) | replace('{description}', skill['description']) %}",
+            "{% if loop.first %}",
+            "{% set _sb_ns.inner = _row %}",
+            "{% else %}",
+            "{% set _sb_ns.inner = _sb_ns.inner + _skill_joiner + _row %}",
+            "{% endif %}",
+            "{% endfor %}",
+            "{% set _skills_block = _skills_template | replace('{skills}', _sb_ns.inner) %}",
+            "{% else %}",
+            "{% set _skills_block = '' %}",
+            "{% endif %}",
+        ]
+
+        # Substitute system_message + the two section blocks into system_template.
+        render = [
+            "{% if _process_system_message is defined %}",
+            "{% set _processed_system = _process_system_message(_resolved_system_message) %}",
+            "{% else %}",
+            "{% set _processed_system = _resolved_system_message %}",
+            "{% endif %}",
+            "{% set _rendered_system = _system_template | replace('{system_message}', _processed_system) | replace('{tools}', _tools_block) | replace('{skills}', _skills_block) %}",
+            "{{ _rendered_system }}",
+        ]
 
         return [
-            # Handle system message first (matching render logic)
+            *tools_block_setup,
+            *skills_block_setup,
             "{% if messages and messages[0]['role'] == 'system' %}",
-            "{% if tools and _system_template_with_tools %}",
             "{% if messages[0]['content'] is string %}",
-            "{% if _process_system_message is defined %}",
-            "{{ _system_template_with_tools.format(system_message=_process_system_message(messages[0]['content']), tools=_fmt_tools(tools)) }}",
+            "{% set _resolved_system_message = messages[0]['content'] %}",
             "{% else %}",
-            "{{ _system_template_with_tools.format(system_message=messages[0]['content'], tools=_fmt_tools(tools)) }}",
+            "{% set _resolved_system_message = messages[0]['content'][0]['text'] %}",
             "{% endif %}",
+            *render,
             "{% else %}",
-            "{% if _process_system_message is defined %}",
-            "{{ _system_template_with_tools.format(system_message=_process_system_message(messages[0]['content'][0]['text']), tools=_fmt_tools(tools)) }}",
-            "{% else %}",
-            "{{ _system_template_with_tools.format(system_message=messages[0]['content'][0]['text'], tools=_fmt_tools(tools)) }}",
-            "{% endif %}",
-            "{% endif %}",
-            "{% else %}",
-            "{% if messages[0]['content'] is string %}",
-            "{% if _process_system_message is defined %}",
-            "{% set processed_message = _process_system_message(messages[0]['content']) %}",
-            "{% set formatted_system = _system_template | replace('{system_message}', processed_message) %}{{ formatted_system }}",
-            "{% else %}",
-            "{% set formatted_system = _system_template | replace('{system_message}', messages[0]['content']) %}{{ formatted_system }}",
-            "{% endif %}",
-            "{% else %}",
-            "{% if _process_system_message is defined %}",
-            "{% set processed_message = _process_system_message(messages[0]['content'][0]['text']) %}",
-            "{% set formatted_system = _system_template | replace('{system_message}', processed_message) %}{{ formatted_system }}",
-            "{% else %}",
-            "{% set formatted_system = _system_template | replace('{system_message}', messages[0]['content'][0]['text']) %}{{ formatted_system }}",
-            "{% endif %}",
-            "{% endif %}",
-            "{% endif %}",
-            "{% else %}",
-            "{% if tools and _system_template_with_tools %}",
-            "{% if _process_system_message is defined %}",
-            "{{ _system_template_with_tools.format(system_message=_process_system_message(_system_message), tools=_fmt_tools(tools)) }}",
-            "{% else %}",
-            "{{ _system_template_with_tools.format(system_message=_system_message, tools=_fmt_tools(tools)) }}",
-            "{% endif %}",
-            "{% else %}",
-            "{% if _process_system_message is defined %}",
-            "{% set processed_message = _process_system_message(_system_message) %}",
-            "{% set formatted_system = _system_template | replace('{system_message}', processed_message) %}{{ formatted_system }}",
-            "{% else %}",
-            "{{ _default_system }}",
-            "{% endif %}",
-            "{% endif %}",
+            "{% set _resolved_system_message = _system_message %}",
+            *render,
             "{% endif %}",
         ]
 
@@ -397,7 +451,7 @@ class JinjaGenerator:
             "{% if _process_assistant_content is defined %}",
             "{% set ns.txt = _process_assistant_content(ns.txt) %}",
             "{% endif %}",
-            "{% if m['tool_calls'] and _tool_call_template is defined %}",
+            "{% if m['tool_calls'] and _single_tool_call_template is defined %}",
             "{% for tool_call in m['tool_calls'] %}",
             "{% if _process_tool_call is defined %}",
             "{% set tool_call_str = _process_tool_call(tool_call) %}",
@@ -408,7 +462,7 @@ class JinjaGenerator:
             "{% endif %}",
             "{% set tool_call_str = tc | tojson %}",
             "{% endif %}",
-            "{% set tool_call_formatted = _tool_call_template | replace('{tool_call}', tool_call_str) %}",
+            "{% set tool_call_formatted = _single_tool_call_template | replace('{tool_call}', tool_call_str) %}",
             "{% set ns.tool_calls_str = ns.tool_calls_str + tool_call_formatted %}",
             "{% endfor %}",
             "{% if _tool_calls_template is not none %}",
@@ -439,18 +493,18 @@ class JinjaGenerator:
             "{% endif %}",
             "{% endfor %}",
             "{% endif %}",
-            "{% if _tool_observation_template is defined %}",
-            "{% set observation_formatted = _tool_observation_template | replace('{observation}', ns.txt) %}",
+            "{% if _single_observation_template is defined %}",
+            "{% set observation_formatted = _single_observation_template | replace('{observation}', ns.txt) %}",
             "{% set _tool_ns.observations = _tool_ns.observations + [observation_formatted] %}",
             "{% else %}",
             "{% set _tool_ns.observations = _tool_ns.observations + [ns.txt] %}",
             "{% endif %}",
             "{% if loop.last or (loop.index0 < messages|length - 1 and messages[loop.index0 + 1]['role'] != 'tool') %}",
             "{% set observations_combined = _tool_ns.observations | join('') %}",
-            "{% if _tool_template and _uses_observations %}",
-            "{{ _tool_template | replace('{observations}', observations_combined) }}",
-            "{% elif _tool_template %}",
-            "{{ _tool_template | replace('{observation}', observations_combined) }}",
+            "{% if _observations_template and _uses_observations %}",
+            "{{ _observations_template | replace('{observations}', observations_combined) }}",
+            "{% elif _observations_template %}",
+            "{{ _observations_template | replace('{observation}', observations_combined) }}",
             "{% else %}",
             "{{ _tool_pref }}{{ observations_combined }}{{ _tool_suff }}",
             "{% endif %}",

@@ -14,7 +14,7 @@ register_template(
         system_message="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-        tool_template="<|im_start|>user\n<tool_response>\n{observation}\n</tool_response><|im_end|>\n",
+        observations_template="<|im_start|>user\n<tool_response>\n{observation}\n</tool_response><|im_end|>\n",
         stop_words=["<|im_end|>"],
     )
 )
@@ -26,7 +26,7 @@ register_template(
         system_message="You are a helpful assistant.",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-        tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+        observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
         image_token="<|image_pad|>",
@@ -38,12 +38,12 @@ register_template(
 register_template(
     Template(
         name="qwen2.5-vl-system-tool",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
         system_message="You are a helpful assistant.",
-        system_template_with_tools="""<|im_start|>system\n{system_message}\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        tools_template="""\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-        tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+        observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
         image_token="<|image_pad|>",
@@ -55,14 +55,14 @@ register_template(
 register_template(
     Template(
         name="qwen3-vl-instruct",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
-        system_template_with_tools="""<|im_start|>system\n{system_message}# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
+        tools_template="""# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant{content}{tool_calls}<|im_end|>\n",
         generation_prompt="<|im_start|>assistant\n",
-        tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
-        tool_template="<|im_start|>user{observations}<|im_end|>\n",
-        tool_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|im_start|>user{observations}<|im_end|>\n",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
         image_token="<|image_pad|>",
@@ -84,15 +84,15 @@ register_template(
 register_template(
     Template(
         name="qwen2.5",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
         system_message="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
-        system_template_with_tools="""<|im_start|>system\n{system_message}\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        tools_template="""\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant{content}{tool_calls}<|im_end|>\n",
         generation_prompt="<|im_start|>assistant\n",
-        tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
-        tool_template="<|im_start|>user{observations}<|im_end|>\n",
-        tool_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|im_start|>user{observations}<|im_end|>\n",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
         stop_words=["<|im_end|>"],
         assistant_policy=AssistantPolicy(
             content_processor=Qwen25AssistantContentProcessor(),
@@ -104,13 +104,18 @@ register_template(
 register_template(
     Template(
         name="qwen2.5-think",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
         system_message="You are a helpful assistant. To answer the user's question, you first think about the reasoning process and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.",
-        # system_template_with_tools="""<|im_start|>You are a helpful assistant. To answer the user's question, you first think about the reasoning process and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object inside <answer> and </answer> tags with function name and arguments within <tool_call></tool_call> XML tags:\n<answer>\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>\n</answer><|im_end|>\n""",
-        system_template_with_tools="""<|im_start|>You are a helpful assistant. To answer the user's question, you first think about the reasoning process and then call tools or provide the answer. The thinking process is enclosed within <think> </think> tags, i.e., <think> [reasoning process here] </think> [response here].\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<think> [reasoning process here] </think>\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>\nYou must think first before calling any tool.<|im_end|>\n""",
+        # NOTE: the legacy ``system_template_with_tools`` for this template
+        # entirely replaced ``system_message`` with a tool-aware preamble (and
+        # used an unusual ``<|im_start|>`` without the ``system`` role label).
+        # The new section-template pattern instead appends a tools block to the
+        # normal system message, which is the cleaner behaviour. Tests that
+        # asserted byte-for-byte on the legacy preamble will need updating.
+        tools_template="""\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<think> [reasoning process here] </think>\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>\nYou must think first before calling any tool.""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant\n<think>{content}<|im_end|>\n",
-        tool_template="<|im_start|>user\n<tool_response>\n{observation}\n</tool_response><|im_end|>\n",
+        observations_template="<|im_start|>user\n<tool_response>\n{observation}\n</tool_response><|im_end|>\n",
         stop_words=["<|im_end|>"],
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
@@ -122,14 +127,14 @@ register_template(
 register_template(
     Qwen3Template(
         name="qwen3",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
-        system_template_with_tools="""<|im_start|>system\n{system_message}# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
+        tools_template="""# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant{content}{tool_calls}<|im_end|>\n",
         generation_prompt="<|im_start|>assistant\n",
-        tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
-        tool_template="<|im_start|>user{observations}<|im_end|>\n",
-        tool_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|im_start|>user{observations}<|im_end|>\n",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
         stop_words=["<|im_end|>"],
         system_policy=SystemPolicy(
             use_system_without_system_message=False,
@@ -147,14 +152,14 @@ register_template(
 register_template(
     Template(
         name="qwen3-instruct",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
-        system_template_with_tools="""<|im_start|>system\n{system_message}# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
+        tools_template="""# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant{content}{tool_calls}<|im_end|>\n",
         generation_prompt="<|im_start|>assistant\n",
-        tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
-        tool_template="<|im_start|>user{observations}<|im_end|>\n",
-        tool_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|im_start|>user{observations}<|im_end|>\n",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
         image_token="<|image_pad|>",
@@ -193,7 +198,7 @@ register_template(
 #         user_template="[INST] {content}[/INST] ",
 #         user_template_with_tools="[AVAILABLE TOOLS] {tools} [/AVAILABLE TOOLS] [INST] {content}[/INST] ",
 #         assistant_template="{content}</s>",
-#         tool_template="{observation}",
+#         observations_template="{observation}",
 #         stop_words=["</s>"],
 #         system_policy=SystemPolicy(
 #             use_system=False,
@@ -209,13 +214,17 @@ register_template(
 register_template(
     Template(
         name="llama-3.2",
-        system_template="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|>",
-        system_template_with_tools="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nEnvironment: ipython\n{system_message}<|eot_id|>",
+        # Tools placement is FIRST_USER, so the catalogue lives in the user
+        # message via ``user_template_with_tools``. The ``{tools}`` slot in the
+        # system_template only carries the ``Environment: ipython`` flag header
+        # that legacy ``system_template_with_tools`` injected when tools exist.
+        system_template="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{tools}{system_message}<|eot_id|>",
+        tools_template="Environment: ipython\n",
         user_template="<|start_header_id|>user<|end_header_id|>\n\n{content}<|eot_id|>",
         user_template_with_tools="""<|start_header_id|>user<|end_header_id|>\n\nGiven the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.\n\nRespond in the format {{"name": function name, "parameters": dictionary of argument name and its value}}.Do not use variables.\n\n{tools}\n\n{content}<|eot_id|>""",
         assistant_template="<|start_header_id|>assistant<|end_header_id|>\n\n{content}{tool_calls}<|eot_id|>",
-        tool_call_template="{tool_call}",
-        tool_template="""<|start_header_id|>ipython<|end_header_id|>\n\n"{observation}"<|eot_id|>""",
+        single_tool_call_template="{tool_call}",
+        observations_template="""<|start_header_id|>ipython<|end_header_id|>\n\n"{observation}"<|eot_id|>""",
         stop_words=["<|eot_id|>"],
         system_policy=SystemPolicy(
             use_system=True,
@@ -242,6 +251,47 @@ register_template(
     )
 )
 
+# GLM-4.5 / GLM-4.6 — full tool-call support, matches the chat_template
+# shipped with `zai-org/GLM-4.5-Air` and `zai-org/GLM-4.5`. Differences vs
+# `glm-4`:
+#   - Tool catalogue gets its own block in the system message (`{tools}` slot)
+#   - Assistant content is preceded by `<think></think>` (empty for non-thinking)
+#   - Each tool call is wrapped in `<tool_call>{body}</tool_call>` markers
+#   - Tool responses live in the `<|observation|>` role (NOT `<|user|>`),
+#     wrapped in `<tool_response>...</tool_response>`
+#   - `stop_words` lists every role marker so generation terminates correctly
+register_template(
+    Template(
+        name="glm-4.5",
+        system_template=(
+            "<|system|>\n{system_message}{tools}"
+        ),
+        tools_template=(
+            "\n\n# Tools\n\n"
+            "You may call one or more functions to assist with the user query.\n\n"
+            "You are provided with function signatures within <tools></tools> XML tags:\n"
+            "<tools>\n{tools}\n</tools>\n\n"
+            "For each function call, return a json object with function name and "
+            "arguments within <tool_call></tool_call> XML tags:\n"
+            "<tool_call>\n"
+            '{{"name": <function-name>, "arguments": <args-json-object>}}\n'
+            "</tool_call>"
+        ),
+        user_template="<|user|>\n{content}",
+        assistant_template="<|assistant|>\n<think></think>{content}{tool_calls}",
+        generation_prompt="<|assistant|>\n<think></think>\n",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|observation|>{observations}",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        stop_words=["<|user|>", "<|observation|>", "<|endoftext|>"],
+        global_policy=GlobalPolicy(prefix="[gMASK]<sop>"),
+        system_policy=SystemPolicy(
+            use_system=True,
+            use_system_without_system_message=True,
+        ),
+    )
+)
+
 register_template(
     Template(
         name="phi-4",
@@ -256,11 +306,11 @@ register_template(
 register_template(
     Template(
         name="nemotron",
-        system_template="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_message}<|eot_id|>",
-        system_template_with_tools="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_message}<AVAILABLE_TOOLS>{tools}</AVAILABLE_TOOLS><|eot_id|>""",
+        system_template="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_message}{tools}<|eot_id|>",
+        tools_template="<AVAILABLE_TOOLS>{tools}</AVAILABLE_TOOLS>",
         user_template="<|start_header_id|>user<|end_header_id|>\n\n{content}<|eot_id|>",
         assistant_template="<|start_header_id|>assistant<|end_header_id|>\n\n{content}<|eot_id|>",
-        tool_template="<|start_header_id|>user<|end_header_id|>\n\n<TOOL_RESPONSE>[{observation}]</TOOL_RESPONSE><|eot_id|>",
+        observations_template="<|start_header_id|>user<|end_header_id|>\n\n<TOOL_RESPONSE>[{observation}]</TOOL_RESPONSE><|eot_id|>",
         stop_words=["<|eot_id|>"],
         system_policy=SystemPolicy(
             use_system=True,
@@ -291,6 +341,48 @@ register_template(
     )
 )
 
+# DeepSeek-V3.1 — full tool-call support, matches the chat_template shipped
+# with `deepseek-ai/DeepSeek-V3.1`. Differences vs `deepseek-r1-distill-qwen`:
+#   - No `<think>` opener in generation_prompt — V3.1 uses `</think>` to
+#     end an empty thinking block (non-thinking mode by default)
+#   - Tool catalogue lives in the system prompt
+#   - Each call is `{name}<｜tool▁sep｜>{args_body}` inside a
+#     `<｜tool▁call▁begin｜>...<｜tool▁call▁end｜>` wrapper; multiple calls
+#     are grouped by `<｜tool▁calls▁begin｜>...<｜tool▁calls▁end｜>`
+#   - Tool responses live in their own `<｜tool▁output▁begin｜>...<｜tool▁output▁end｜>`
+#     pair grouped by `<｜tool▁outputs▁begin｜>...<｜tool▁outputs▁end｜>`
+#
+# Body convention: `body_carries_name=False` — the function name lives
+# in the marker via `<｜tool▁sep｜>`; the body following it is just args.
+register_template(
+    Template(
+        name="deepseek-v3.1",
+        system_template="{system_message}{tools}",
+        tools_template=(
+            "\n\n## Tools\nYou have access to the following tools:\n\n"
+            "{tools}\n\n"
+            "## Tool Use Rules\n"
+            "When you need to call a tool, output it in the following format:\n"
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>NAME<｜tool▁sep｜>ARGUMENTS<｜tool▁call▁end｜><｜tool▁calls▁end｜>\n"
+            "where NAME is the function name and ARGUMENTS is a JSON object "
+            "with the function arguments."
+        ),
+        user_template="<｜User｜>{content}",
+        assistant_template="<｜Assistant｜></think>{content}{tool_calls}<｜end▁of▁sentence｜>",
+        generation_prompt="<｜Assistant｜></think>",
+        tool_calls_template="<｜tool▁calls▁begin｜>{tool_calls}<｜tool▁calls▁end｜>",
+        single_tool_call_template="<｜tool▁call▁begin｜>{tool_call}<｜tool▁call▁end｜>",
+        observations_template="<｜tool▁outputs▁begin｜>{observations}<｜tool▁outputs▁end｜>",
+        single_observation_template="<｜tool▁output▁begin｜>{observation}<｜tool▁output▁end｜>",
+        stop_words=["<｜end▁of▁sentence｜>"],
+        global_policy=GlobalPolicy(prefix="<｜begin▁of▁sentence｜>"),
+        system_policy=SystemPolicy(
+            use_system=True,
+            use_system_without_system_message=False,
+        ),
+    )
+)
+
 register_template(
     Template(
         name="llemma",
@@ -304,15 +396,17 @@ register_template(
 register_template(
     Template(
         name="kimi-k2-instruct",
-        system_template="<|im_system|>system<|im_middle|>{system_message}<|im_end|>\n",
-        system_template_with_tools="""<|im_system|>tool_declare<|im_middle|>{tools}<|im_end|><|im_system|>system<|im_middle|>{system_message}<|im_end|>\n""",
+        # Kimi-K2 puts the tool catalogue BEFORE the system message block,
+        # so the ``{tools}`` slot sits at the very start of ``system_template``.
+        system_template="{tools}<|im_system|>system<|im_middle|>{system_message}<|im_end|>\n",
+        tools_template="<|im_system|>tool_declare<|im_middle|>{tools}<|im_end|>",
         system_message="You are Kimi, an AI assistant created by Moonshot AI.",
         user_template="<|im_user|>user<|im_middle|>{content}<|im_end|>",
         assistant_template="<|im_assistant|>assistant<|im_middle|>{content}{tool_calls}<|im_end|>",
         tool_calls_template="<|tool_calls_section_begin|>{tool_calls}<|tool_calls_section_end|>",
-        tool_call_template="<|tool_call_begin|>{tool_call}<|tool_call_end|>",
-        tool_template="{observations}",
-        tool_observation_template="<|im_system|>tool<|im_middle|>## Return of \n{observation}<|im_end|>",
+        single_tool_call_template="<|tool_call_begin|>{tool_call}<|tool_call_end|>",
+        observations_template="{observations}",
+        single_observation_template="<|im_system|>tool<|im_middle|>## Return of \n{observation}<|im_end|>",
         vision_start="<|vision_start|>",
         vision_end="<|vision_end|>",
         image_token="<|image_pad|>",
@@ -329,18 +423,48 @@ register_template(
     )
 )
 
+# Skills-aware Qwen template demonstrating the new section-template pattern.
+# Matches Qwen 3.5's stock chat-template structure verbatim for the tools
+# section, plus an additional ``# Skills`` block in the same style.
+# Reference: https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/chat_template.jinja
+# Key facts that drove the design:
+# - Section order: ``{tools}{skills}{system_message}`` — Qwen 3.5 appends the
+#   user's system content AFTER the tools block (not before).
+# - The format instruction + ``<IMPORTANT>`` reminder is REQUIRED. Without it,
+#   Qwen 3.5 improvises a different tool-call format that vLLM's parser can't
+#   recognize (e.g. ``<tool_code>foo(a=1)</tool_code>``).
+# - The default ``ToolPolicy.formatter`` joins per-tool JSON with ``\n``, so the
+#   ``{tools}`` placeholder lands as ``json1\njson2\n...`` inside ``<tools>``.
+# - ``tools_template`` and ``skills_template`` end with ``\n\n`` so they slot
+#   together cleanly when both are present, leaving exactly one blank line
+#   before the user's system message.
+register_template(
+    Template(
+        name="qwen-skills",
+        system_template="<|im_start|>system\n{tools}{skills}{system_message}<|im_end|>\n",
+        tools_template="""# Tools\n\nYou have access to the following functions:\n\n<tools>\n{tools}\n</tools>\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\n- Required parameters MUST be specified\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\n</IMPORTANT>\n\n""",
+        skills_template="# Skills\n\nYou may also load one of the following skills via the load_skill tool. Each skill bundles instructions and (optionally) scripts/references that activate only after load_skill is called.\n\n<skills>\n{skills}\n</skills>\n\n",
+        user_template="<|im_start|>user\n{content}<|im_end|>\n",
+        assistant_template="<|im_start|>assistant\n<think>{content}<|im_end|>\n",
+        generation_prompt="<|im_start|>assistant\n<think>",
+        observations_template="<|im_start|>user\n<tool_response>\n{observation}\n</tool_response><|im_end|>\n",
+        stop_words=["<|im_end|>"],
+    )
+)
+
+
 register_template(
     Template(
         name="toolgen-qwen2.5",
-        system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+        system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
         system_message="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
-        system_template_with_tools="""<|im_start|>system\n{system_message}\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call><|im_end|>\n""",
+        tools_template="""\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{tools}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{{"name": <function-name>, "arguments": <args-json-object>}}\n</tool_call>""",
         user_template="<|im_start|>user\n{content}<|im_end|>\n",
         assistant_template="<|im_start|>assistant{content}{tool_calls}<|im_end|>\n",
         generation_prompt="<|im_start|>assistant\n",
-        tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
-        tool_template="<|im_start|>user{observations}<|im_end|>\n",
-        tool_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
+        single_tool_call_template="\n<tool_call>\n{tool_call}\n</tool_call>",
+        observations_template="<|im_start|>user{observations}<|im_end|>\n",
+        single_observation_template="\n<tool_response>\n{observation}\n</tool_response>",
         stop_words=["<|im_end|>"],
         tool_policy=ToolPolicy(
             formatter=JsonFormatterNoBreakLine(),

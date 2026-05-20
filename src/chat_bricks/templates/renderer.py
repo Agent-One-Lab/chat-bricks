@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import logging
 from typing import TYPE_CHECKING, Dict, List, Tuple, Union
@@ -26,7 +27,7 @@ class Renderer:
                     tool_call = tool_call["function"]
                 tool_call_str = json.dumps(tool_call)
             full_tool_calls_str.append(
-                self.template.tool_call_template.format(tool_call=tool_call_str)
+                self.template.single_tool_call_template.format(tool_call=tool_call_str)
             )
 
         if self.template.tool_calls_template is not None:
@@ -48,7 +49,7 @@ class Renderer:
         # If there is no single tool response template, probably model does not support
         # parallel tool calls and don't need to differentiate between single and multiple
         # tool calls, so we just return the content as is.
-        if self.template.tool_observation_template is None:
+        if self.template.single_observation_template is None:
             if isinstance(tool_observation_content, str):
                 return tool_observation_content
             elif isinstance(tool_observation_content, list):
@@ -87,7 +88,7 @@ class Renderer:
                 f"Invalid tool observation content type: {type(tool_observation_content)}"
             )
 
-        return self.template.tool_observation_template.format(observation=text)
+        return self.template.single_observation_template.format(observation=text)
 
     def _preprocess_messages(self, messages: List[Dict]) -> List[Dict]:
         """Preprocess the messages to remove nested structures in messages
@@ -119,7 +120,11 @@ class Renderer:
         return preprocessed_messages
 
     def render(
-        self, messages: List[Dict], tools=None, add_generation_prompt: bool = False
+        self,
+        messages: List[Dict],
+        tools=None,
+        skills=None,
+        add_generation_prompt: bool = False,
     ) -> str:
         """Render the template.
 
@@ -127,12 +132,18 @@ class Renderer:
         high-level flow is immediately apparent:
 
             1. _insert_tools              – decide where the tool catalogue lives
-            2. _encode_turns              – encode every conversation turn
-            3. _maybe_add_generation_prompt – append the generation prefix if requested
+            2. _format_skills             – format the optional skill catalogue
+            3. _encode_turns              – encode every conversation turn
+            4. _maybe_add_generation_prompt – append the generation prefix if requested
 
         Args:
             messages: The list of messages
             tools: The list of tools
+            skills: Optional list of skill objects/dicts. Each entry needs ``name`` and
+                ``description`` (either as dict keys or attributes). The template's
+                ``skills_template`` + ``single_skill_template`` (or ``skill_policy``)
+                control the rendered form. When ``skills_template`` is not set, this
+                argument is silently ignored.
             add_generation_prompt: Whether to add the generation prefix
 
         Returns:
@@ -144,12 +155,17 @@ class Renderer:
         # Step 1 – decide tool placement & clone messages
         work_messages = self._preprocess_messages(messages)
         logger.debug(f"[Template] work_messages: {work_messages}")
-        work_messages, tools_str, insert_tools_idx = self._insert_tools(
+        work_messages, tools_raw, tools_block, insert_tools_idx = self._insert_tools(
             work_messages, tools
         )
 
+        # Step 1b – build the skills section (system-only; no placement variation)
+        skills_str = self._format_skills(skills)
+
         # Step 2 – encode each conversation turn to text tokens
-        elements, roles = self._encode_turns(work_messages, tools_str, insert_tools_idx)
+        elements, roles = self._encode_turns(
+            work_messages, tools_raw, tools_block, skills_str, insert_tools_idx
+        )
 
         # Step 3 – append generation prefix if needed
         if add_generation_prompt:
@@ -168,30 +184,87 @@ class Renderer:
         Returns:
             work_messages : List[Dict]
                 A deepcopy of the original *messages* so we never mutate caller data.
-            tools_str : Optional[str]
-                The formatted tool catalogue or *None* if `tools` is falsy.
+            tools_raw : Optional[str]
+                The raw formatted tool catalogue (no section wrapping). Used to
+                fill ``{tools}`` placeholders in ``user_template_with_tools`` where
+                the template author already wraps the list.
+            tools_block : Optional[str]
+                The system-side block: ``tools_raw`` wrapped via ``tools_template``
+                if the template defines one, else identical to ``tools_raw``. Fills
+                the system_template's ``{tools}`` slot.
             insert_tools_idx : int
                 Index of the *user* message that receives the catalogue, or -1 when
                 no injection is required.
         """
 
         if tools:
-            tools_str = self.template.tool_policy.format_tools(tools)
+            tools_raw = self._format_tools_raw(tools)
+            tools_block = self._wrap_tools_block(tools_raw)
             placement = self.template.tool_policy.placement
             insert_tools_idx = self._find_insert_tools_index(messages, placement)
         else:
-            tools_str = None
+            tools_raw = None
+            tools_block = None
             insert_tools_idx = -1
-        return messages, tools_str, insert_tools_idx
+        return messages, tools_raw, tools_block, insert_tools_idx
+
+    def _format_tools_raw(self, tools) -> str:
+        """Render the raw tool catalogue string (the inner list, no wrapping).
+
+        When ``single_tool_template`` is set, wrap each tool individually and join;
+        otherwise let the ``ToolPolicy.formatter`` produce the whole list in one shot.
+        """
+        single = self.template.single_tool_template
+        if single:
+            items = []
+            for tool in tools:
+                formatted = self.template.tool_policy.format_tools([tool])
+                items.append(single.format(tool=formatted))
+            return "".join(items)
+        return self.template.tool_policy.format_tools(tools)
+
+    def _wrap_tools_block(self, tools_raw: str) -> str:
+        """Wrap the raw tool catalogue via ``tools_template`` for system-side placement.
+
+        When ``tools_template`` is not set, the block is identical to the raw list.
+        """
+        if not self.template.tools_template:
+            return tools_raw
+        return self.template.tools_template.format(tools=tools_raw)
+
+    def _format_skills(self, skills) -> str:
+        """Render the skill catalogue string that fills the ``{skills}`` placeholder.
+
+        Returns ``""`` when ``skills`` is empty or the template does not declare
+        a ``skills_template`` — keeps the format() call total even for templates
+        that have no skill awareness.
+        """
+        if not skills or not self.template.skills_template:
+            return ""
+        policy = self.template.skill_policy
+        # Allow the template to override the policy's per-item template.
+        if self.template.single_skill_template is not None:
+            policy = dataclasses.replace(
+                policy, single_skill_template=self.template.single_skill_template
+            )
+        inner = policy.format_skills(skills)
+        return self.template.skills_template.format(skills=inner)
 
     def _encode_turns(
         self,
         work_messages: List[Dict],
-        tools_str: str,
+        tools_raw: str,
+        tools_block: str,
+        skills_str: str,
         insert_tools_idx: int,
     ) -> Tuple[List[str], List[Role]]:
         """Convert every message dict into its textual representation while
-        tracking roles for later masking logic."""
+        tracking roles for later masking logic.
+
+        ``tools_block`` (wrapped) fills ``{tools}`` in the system template.
+        ``tools_raw`` (unwrapped list) fills ``{tools}`` in ``user_template_with_tools``,
+        whose template author handles the wrapping themselves.
+        """
 
         elements: List[str] = []
         roles: List[Role] = []
@@ -210,7 +283,7 @@ class Renderer:
             if i == 0 and current_role == Role.SYSTEM:
                 if self.template.system_policy.use_system:
                     system_message = self._encode_system_message(
-                        message["content"], tools=tools_str
+                        message["content"], tools=tools_block, skills=skills_str
                     )
                     elements.append(system_message)
                     roles.append(Role.SYSTEM)
@@ -220,7 +293,7 @@ class Renderer:
             elif i == 0 and current_role != Role.SYSTEM:
                 if self.template.system_policy.use_system:
                     system_message = self._encode_system_message_default(
-                        tools=tools_str
+                        tools=tools_block, skills=skills_str
                     )
                     elements.append(system_message)
                     roles.append(Role.SYSTEM)
@@ -232,7 +305,7 @@ class Renderer:
             if current_role == Role.USER:
                 if i == insert_tools_idx:
                     user_message = self._encode_user_message_with_tools(
-                        message["content"], tools=tools_str
+                        message["content"], tools=tools_raw
                     )
                 else:
                     user_message = self._encode_user_message(message["content"])
@@ -296,7 +369,7 @@ class Renderer:
                 raise ValueError(f"Unhandled ToolPlacement: {placement}")
         return insert_tools_idx
 
-    def _encode_system_message_default(self, tools=None) -> str:
+    def _encode_system_message_default(self, tools=None, skills="") -> str:
         logger.debug(
             f"[Template] Encoding system message default for template: {self.template.name}"
         )
@@ -314,19 +387,9 @@ class Renderer:
         else:
             system_message = self.template.system_message
 
-        if tools is None:
-            return self.template.system_template.format(system_message=system_message)
-        else:
-            if self.template.system_template_with_tools:
-                return self.template.system_template_with_tools.format(
-                    system_message=system_message, tools=tools
-                )
-            else:
-                return self.template.system_template.format(
-                    system_message=system_message
-                )
+        return self._format_system_template(system_message, tools=tools, skills=skills)
 
-    def _encode_system_message(self, content, tools=None) -> str:
+    def _encode_system_message(self, content, tools=None, skills="") -> str:
         # Handle both string content and list content formats
         logger.debug(
             f"[Template] Encoding system message for template: {self.template.name}"
@@ -341,17 +404,18 @@ class Renderer:
                 system_message, tools=tools
             )
 
-        if tools is None:
-            return self.template.system_template.format(system_message=system_message)
-        else:
-            if self.template.system_template_with_tools is None:
-                return self.template.system_template.format(
-                    system_message=system_message
-                )
-            else:
-                return self.template.system_template_with_tools.format(
-                    system_message=system_message, tools=tools
-                )
+        return self._format_system_template(system_message, tools=tools, skills=skills)
+
+    def _format_system_template(self, system_message: str, tools=None, skills: str = "") -> str:
+        """Apply ``system_template``, passing ``tools=`` / ``skills=`` so templates
+        that opt in to the placeholders get them filled. ``str.format()`` silently
+        ignores extra kwargs, so templates without those placeholders are fine.
+        """
+        return self.template.system_template.format(
+            system_message=system_message,
+            tools=tools if tools is not None else "",
+            skills=skills,
+        )
 
     def _encode_user_message_with_tools(self, content, tools: str) -> str:
         # Handle both string content and list content formats
@@ -443,10 +507,10 @@ class Renderer:
             f"Content should be a string, but got {type(content)}"
         )
 
-        if "{observations}" in self.template.tool_template:
-            tool_message = self.template.tool_template.format(observations=content)
+        if "{observations}" in self.template.observations_template:
+            tool_message = self.template.observations_template.format(observations=content)
         else:
-            tool_message = self.template.tool_template.format(observation=content)
+            tool_message = self.template.observations_template.format(observation=content)
         return tool_message
 
     def _encode_generation_prompt(self) -> str:
@@ -557,6 +621,7 @@ class Qwen3Renderer(Renderer):
         self,
         messages: List[Dict],
         tools=None,
+        skills=None,
         add_generation_prompt: bool = False,
         enable_thinking: bool = False,
     ) -> str:
@@ -565,6 +630,7 @@ class Qwen3Renderer(Renderer):
         Args:
             messages: The list of messages
             tools: The list of tools
+            skills: Optional list of skill objects/dicts.
             add_generation_prompt: Whether to add the generation prefix
             enable_thinking: Whether to enable thinking mode
 
@@ -577,9 +643,10 @@ class Qwen3Renderer(Renderer):
         # Step 1 – decide tool placement & clone messages
         work_messages = self._preprocess_messages(messages)
         logger.debug(f"[Qwen3Template] work_messages: {work_messages}")
-        work_messages, tools_str, insert_tools_idx = self._insert_tools(
+        work_messages, tools_raw, tools_block, insert_tools_idx = self._insert_tools(
             work_messages, tools
         )
+        skills_str = self._format_skills(skills)
 
         # Step 2 – clean think content from all assistant messages except the last one
         work_messages = self._clean_think_content(work_messages)
@@ -589,7 +656,7 @@ class Qwen3Renderer(Renderer):
             work_messages = self._reformat_last_assistant_think_content(work_messages)
 
         # Step 3 – encode each conversation turn to text tokens
-        elements, roles = self._encode_turns(work_messages, tools_str, insert_tools_idx)
+        elements, roles = self._encode_turns(work_messages, tools_raw, tools_block, skills_str, insert_tools_idx)
 
         # Step 4 – handle special generation prompt logic for Qwen3
         if add_generation_prompt:

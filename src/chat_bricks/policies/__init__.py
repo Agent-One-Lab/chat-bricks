@@ -2,6 +2,7 @@ from .assistant_policy import AssistantPolicy, Qwen25AssistantContentProcessor
 from .global_policy import GlobalPolicy
 from .system_policy import (Llama32DateProcessor, SystemContentProcessor,
                             SystemPolicy)
+from .skill_policy import SkillPolicy
 from .tool_policy import (JsonCompactFormatter, JsonFormatter,
                           JsonFormatterNoBreakLine, JsonIndentedFormatter,
                           JsonMinifiedFormatter, JsonQwenFormatter,
@@ -15,6 +16,7 @@ __all__ = [
     "Llama32DateProcessor",
     "SystemPolicy",
     "SystemContentProcessor",
+    "SkillPolicy",
     "ToolPolicy",
     "JsonCompactFormatter",
     "JsonFormatter",

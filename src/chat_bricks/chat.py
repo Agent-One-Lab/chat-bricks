@@ -16,6 +16,7 @@ class Chat:
         template: str | Template | HFTemplate,
         messages: List[List[str]] = None,
         tools=None,
+        skills=None,
         tokenizer: PreTrainedTokenizer = None,
         ignore_tool_calls: bool = False,
     ):
@@ -24,6 +25,8 @@ class Chat:
             template: The name of the template to use.
             messages: The messages to use for the chat.
             tools: The tools to use for the chat.
+            skills: Optional list of skill objects/dicts to advertise via the template's
+                ``{skills}`` placeholder (requires ``skills_template`` on the template).
             tokenizer: The tokenizer to use for the chat.
         """
         if isinstance(template, str):
@@ -44,6 +47,7 @@ class Chat:
         logger.debug(f"[chat-bricks/Chat] Messages: {self.messages}")
         self.tokenizer = tokenizer
         self.tools = tools
+        self.skills = skills
         self.flags = {}
 
     def _detect_labels(self, messages):
@@ -121,12 +125,13 @@ class Chat:
         """Set the messages for the chat."""
         self.messages = self.convert_to_hf_format_messages(messages)
 
-    def prompt(self, add_generation_prompt=False, tools=None, **kwargs) -> str:
+    def prompt(self, add_generation_prompt=False, tools=None, skills=None, **kwargs) -> str:
         """Get the prompt for the chat.
 
         Args:
             add_generation_prompt: Whether to add the generation prompt.
             tools: The tools to use for the chat.
+            skills: Optional list of skill objects/dicts (see ``Chat.__init__``).
             **kwargs: Additional keyword arguments to pass to the template render method.
 
         Returns:
@@ -134,32 +139,37 @@ class Chat:
         """
         self.flags["add_generation_prompt"] = add_generation_prompt
         tools = tools or self.tools
+        skills = skills if skills is not None else self.skills
         prompt, _, _ = self.template.render(
             messages=self.messages,
             tools=tools,
+            skills=skills,
             add_generation_prompt=add_generation_prompt,
             **kwargs,
         )
         return prompt
 
     def prompt_with_mask(
-        self, add_generation_prompt=False, tools=None, **kwargs
+        self, add_generation_prompt=False, tools=None, skills=None, **kwargs
     ) -> str:
         """Get the prompt for the chat with highlight on the masked parts.
 
         Args:
             add_generation_prompt: Whether to add the generation prompt.
             tools: The tools to use for the chat.
+            skills: Optional list of skill objects/dicts (see ``Chat.__init__``).
             **kwargs: Additional keyword arguments to pass to the template render method.
 
         Returns:
             The string formatted prompt for the messages after applying the chat template with highlight on the masked parts.
         """
         tools = tools or self.tools
+        skills = skills if skills is not None else self.skills
         prompt_with_mask, _, _ = self.template.render_with_mask(
             messages=self.messages,
             add_generation_prompt=add_generation_prompt,
             tools=tools,
+            skills=skills,
             **kwargs,
         )
         return prompt_with_mask
@@ -172,6 +182,7 @@ class Chat:
         tokenizer: PreTrainedTokenizer = None,
         add_generation_prompt=False,
         tools=None,
+        skills=None,
         processor=None,
         train_on_last_turn_only=False,
         **kwargs,
@@ -182,6 +193,7 @@ class Chat:
             tokenizer: The tokenizer to use for the chat.
             add_generation_prompt: Whether to add the generation prompt.
             tools: The tools to use for the chat.
+            skills: Optional list of skill objects/dicts (see ``Chat.__init__``).
             processor: The processor to use for the chat.
 
         Returns:
@@ -201,12 +213,15 @@ class Chat:
 
         if tools is None:
             tools = self.tools
+        if skills is None:
+            skills = self.skills
 
         return self.template.encode(
             messages=self.messages,
             tokenizer=tokenizer,
             return_tensors="pt",
             tools=tools,
+            skills=skills,
             add_generation_prompt=add_generation_prompt,
             processor=processor,
             train_on_last_turn_only=train_on_last_turn_only,
