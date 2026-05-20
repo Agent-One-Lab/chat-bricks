@@ -30,30 +30,34 @@
 
 ### Core Chat Template Components
 
-The Chat Template System is inspired by the art of building block toys - where complex structures are created by combining simple, standardized components. We identify some basic components from LLM's chat templates, and use them to form prompts from conversation messages. Below are some basic core compoenents:
+The Chat Template System is inspired by the art of building block toys - where complex structures are created by combining simple, standardized components. We identify some basic components from LLM's chat templates, and use them to form prompts from conversation messages. Below are the core components:
 
-`system_template`: Specify how system prompt is formatted in chat template.
+`system_template`: Specify how the system prompt is formatted. May contain `{system_message}`, and optionally `{tools}` / `{skills}` slots that get filled by the section templates below.
 
-`system_template_with_tools`: Specify how tools along with system prompt is formatted in chat template
+`user_template` / `user_template_with_tools`: Specify how a user message is formatted (the `_with_tools` variant is used when the tool policy places the tool catalogue with a user turn).
 
-`user_template`: Specify how user message is formatted in chat template
+`assistant_template`: Specify how an assistant message is formatted.
 
-`assistant_template`: Specify how assistant is formatted in chat template
+`observations_template` (formerly `tool_template`): Wraps a tool-response message. Use `{observation}` for single responses or `{observations}` when combined with `single_observation_template` for parallel tool responses.
 
-`tool_template`: Specify how tool response is formatted in chat template
+`tools_template` + `single_tool_template`: Section wrappers used for the tool catalogue. The renderer wraps each tool with `single_tool_template`, joins them, then wraps the whole list with `tools_template`. The result fills the `{tools}` placeholder in `system_template` (or in `user_template_with_tools` depending on tool placement).
+
+`skills_template` + `single_skill_template`: Section wrappers for the skill catalogue. Same two-pass pattern as tools — the result fills the `{skills}` placeholder in `system_template`. Skills only live in the system message.
+
+`tool_calls_template` + `single_tool_call_template` (formerly `tool_call_template`): Wraps parallel tool calls inside an assistant message.
 
 Assume we have the following chat template, and messages
-```
-system_template = f"System: {system_message}\n"
-system_template_with_tools = f"System: {system_message}\n#Tools: {tools}\n"
+```python
+system_template = "System: {system_message}{tools}\n"
+tools_template = "\n#Tools: {tools}"
 user_template = "User: {content}\n"
-assistant_template = "User: {content}\n"
+assistant_template = "Assistant: {content}\n"
 
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Hi, Can you help me search the information."},
-    {"role": "assistant", "content": "tool call: search tool arguments: related query"}
-    {"role": "tool", "content": "Searched inforamtion..."}
+    {"role": "assistant", "content": "tool call: search tool arguments: related query"},
+    {"role": "tool", "content": "Searched information..."}
 ]
 
 tools = [
@@ -68,7 +72,7 @@ tools = [
 
 <span class="system"> </span>: formatted system prompt; <span class="user"> </span>: formatted user message; <span class="assistant"> </span>: formatted assistant message; <span class="tool"> </span>: formatted tool message;
 
-1. When combined, these create the complete prompt:
+1. When no tools are passed, the `{tools}` slot is empty and the prompt is:
 
 <span class="system">System: You are a helpful assistant.</span>
 
@@ -76,9 +80,9 @@ tools = [
 
 <span class="assistant">Assistant: tool call: search\ntool arguments: related query</span>
 
-<span class="tool">Tool: Searched inforamtion...</span>
+<span class="tool">Tool: Searched information...</span>
 
-2. When tools are included, the `system_template_with_tools` is used:
+2. When tools are included, the `tools_template` fills the `{tools}` slot in `system_template`:
 
 <span class="system">System: You are a helpful assistant.
 <br>
@@ -88,20 +92,21 @@ tools = [
 
 <span class="assistant">Assistant: tool call: search\ntool arguments: related query</span>
 
-<span class="tool">Tool: Searched inforamtion...</span>
+<span class="tool">Tool: Searched information...</span>
 
 
 ### High-Level Workflow
 
 ```
-Messages + Tools → Template Processing → Vision Processing → LLM-Ready Inputs
+Messages + Tools + Skills → Template Processing → Vision Processing → LLM-Ready Inputs
 ```
 
-The system follows a three-step rendering process:
+The system follows a four-step rendering process:
 
-1. **Tool Insertion**: Decide where and how to inject tool definitions
-2. **Turn Encoding**: Convert each conversation turn to its textual representation
-3. **Generation Prompt**: Optionally append generation prefixes
+1. **Tool Insertion**: Decide where and how to inject the tool catalogue (system message or first/last user turn).
+2. **Skill Formatting**: Build the skill catalogue block that fills the `{skills}` slot of the system template (system-only, no placement variation).
+3. **Turn Encoding**: Convert each conversation turn to its textual representation.
+4. **Generation Prompt**: Optionally append generation prefixes.
 
 If we tokenize the input messages, the vision processor will do the following steps:
 
@@ -138,11 +143,12 @@ template = get_template("custom")
 
 **2. Fine-grained Behavior Control**
 
-Three levels of policy control:
+Four levels of policy control:
 
 1. **Global Policy**: Template-wide settings (e.g., prefix tokens)
 2. **System Policy**: System message behavior and content processing
 3. **Tool Policy**: Tool placement, formatting, and content processing
+4. **Skill Policy**: How a `(name, description)` skill entry becomes one row in the `{skills}` block
 
 ```python
 # Tool formatting strategies
@@ -154,6 +160,10 @@ YamlFormatter()
 ToolPlacement.SYSTEM
 ToolPlacement.FIRST_USER
 ToolPlacement.LAST_USER
+
+# Skill row template (default: "- {name}: {description}")
+from chat_bricks.policies import SkillPolicy
+SkillPolicy(single_skill_template="* {name} :: {description}", joiner="\n")
 ```
 
 **3. Vision Process**

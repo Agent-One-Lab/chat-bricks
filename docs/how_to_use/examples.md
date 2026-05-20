@@ -167,29 +167,22 @@ from chat_bricks import ToolPlacement
 coding_template = Template(
     name="coding-assistant",
 
-    # System message
+    # System message — {tools} stays empty when no tools are passed
     system_template="""<|im_start|>system
 You are an expert coding assistant. You help users write, debug, and understand code.
 Always provide clear explanations and follow best practices.
-{system_message}<|im_end|>
+{system_message}{tools}<|im_end|>
 """,
     system_message="You are an expert coding assistant.",
 
-    # Tool support for code execution
-    system_template_with_tools="""<|im_start|>system
-You are an expert coding assistant with access to code execution tools.
-Always think through the problem before writing code.
-{system_message}
-
-Available Tools:
-{tools}<|im_end|>
-""",
+    # Tool support for code execution — fills the {tools} slot above
+    tools_template="\n\nAvailable Tools:\n{tools}",
 
     # User and assistant templates
     user_template="<|im_start|>user\n{content}<|im_end|>\n",
     user_template_with_tools="<|im_start|>user\n{content}\n\nTools: {tools}<|im_end|>\n",
     assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-    tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
 
     # Stop words
     stop_words=["<|im_end|>"],

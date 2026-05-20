@@ -22,16 +22,19 @@ print(prompt)
 
 ### Template Components
 
-- **System Template**: Defines system message format
-- **User Template**: How user messages are formatted
-- **Assistant Template**: How assistant responses are formatted
-- **Tool Template**: How tool responses are formatted
+- **System Template**: Defines system message format. May include `{tools}` / `{skills}` slots filled by the section templates below.
+- **User Template**: How user messages are formatted.
+- **Assistant Template**: How assistant responses are formatted.
+- **Observations Template**: How tool responses are formatted (formerly `tool_template`).
+- **Tools Template** + **Single Tool Template**: Section wrappers for the tool catalogue.
+- **Skills Template** + **Single Skill Template**: Section wrappers for the skill catalogue — `(name, description)` entries advertised in the system prompt.
 
 ### Policies
 
-- **System Policy**: Controls system message behavior
-- **Tool Policy**: Manages tool integration strategy
-- **Global Policy**: Template-wide behavior settings
+- **System Policy**: Controls system message behavior.
+- **Tool Policy**: Manages tool placement, formatting, and content processing.
+- **Skill Policy**: Controls how each skill entry is rendered into the `{skills}` block.
+- **Global Policy**: Template-wide behavior settings.
 
 ### Vision Support
 
@@ -59,14 +62,15 @@ The Chat Template System is inspired by **building block toys**—complex struct
 ## System Architecture
 
 ```
-Messages + Tools → Template Processing → Vision Processing → LLM-Ready Inputs
+Messages + Tools + Skills → Template Processing → Vision Processing → LLM-Ready Inputs
 ```
 
-The system follows a **three-step rendering process**:
+The system follows a **four-step rendering process**:
 
-1. **Tool Insertion**: Decide where and how to inject tool definitions.
-2. **Turn Encoding**: Convert each conversation turn to its textual representation.
-3. **Generation Prompt**: Optionally append generation prefixes.
+1. **Tool Insertion**: Decide where and how to inject the tool catalogue.
+2. **Skill Formatting**: Build the skill catalogue block for the `{skills}` slot.
+3. **Turn Encoding**: Convert each conversation turn to its textual representation.
+4. **Generation Prompt**: Optionally append generation prefixes.
 
 ## Contributing
 

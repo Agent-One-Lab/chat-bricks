@@ -132,6 +132,84 @@ filtered_tool_policy = ToolPolicy(
 )
 ```
 
+## Skill Policy System
+
+Skills are a lightweight catalogue concept — each skill has a `name` and
+`description`, and the list is advertised in the system prompt (typically next
+to a `load_skill` tool). Unlike tools, skills always live in the system message
+— there is no placement variation.
+
+### How Skills Render
+
+Three pieces decide what the skill block looks like:
+
+1. **`{skills}` placeholder** in `system_template` — where the block lives.
+2. **`skills_template`** — wraps the joined list, e.g. `"# Skills\n<skills>\n{skills}\n</skills>"`.
+3. **`single_skill_template`** (or `SkillPolicy.single_skill_template`) — wraps
+   one entry, defaulting to `"- {name}: {description}"`.
+
+If `skills_template` is `None`, the template doesn't render skills and a
+`skills=` argument at render time is silently dropped.
+
+### SkillPolicy
+
+```python
+from chat_bricks import Template
+from chat_bricks.policies import SkillPolicy
+
+# Default policy — one entry per line, "- name: description"
+default_skill_policy = SkillPolicy()
+
+# Custom row format and a different joiner
+custom_skill_policy = SkillPolicy(
+    single_skill_template="* {name} :: {description}",
+    joiner="\n",
+)
+
+# With a content processor (e.g. truncating long descriptions)
+def truncate_description(skill, limit=80):
+    desc = skill.get("description", "")
+    if len(desc) > limit:
+        skill = {**skill, "description": desc[: limit - 1] + "…"}
+    return skill
+
+policy_with_processor = SkillPolicy(content_processor=truncate_description)
+
+template = Template(
+    name="my-skills",
+    system_template="<|im_start|>system\n{system_message}{skills}<|im_end|>\n",
+    skills_template="\n\n# Skills\n<skills>\n{skills}\n</skills>",
+    skill_policy=custom_skill_policy,
+    user_template="<|im_start|>user\n{content}<|im_end|>\n",
+    assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
+    stop_words=["<|im_end|>"],
+)
+```
+
+### Skill Entries
+
+Skill entries may be plain dicts or any object that exposes `.name` and
+`.description` attributes:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Skill:
+    name: str
+    description: str
+
+skills = [
+    {"name": "add-numbers", "description": "Adds two integers."},
+    Skill("word-count", "Counts words in text."),
+]
+
+chat = Chat(template="my-skills", messages=messages, skills=skills)
+print(chat.prompt())
+```
+
+Missing `name` raises `TypeError` — `description` defaults to empty if absent.
+
 ## System Policy System
 
 ### System Message Control
@@ -235,18 +313,21 @@ prefix_policy = GlobalPolicy(prefix="<|begin_of_text|>")
 
 ### Conditional Templates
 
+The `{tools}` and `{skills}` placeholders in `system_template` expand to empty
+strings when no tools/skills are passed, so one template handles both the bare
+and section-enabled cases without an `_with_tools` variant.
+
 ```python
 from chat_bricks import Template
 
-# Template that changes based on context
 conditional_template = Template(
     name="conditional",
-    system_template="You are a helpful assistant.",
-    system_template_with_tools="You are a helpful assistant with tools: {tools}",
+    system_template="You are a helpful assistant.{tools}",
+    tools_template=" with tools: {tools}",
     user_template="User: {content}",
     user_template_with_tools="User: {content}\n\nAvailable tools: {tools}",
     assistant_template="Assistant: {content}",
-    tool_template="Tool: {observation}"
+    observations_template="Tool: {observation}"
 )
 ```
 

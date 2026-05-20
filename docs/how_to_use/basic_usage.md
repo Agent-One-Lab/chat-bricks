@@ -84,6 +84,28 @@ chat = Chat(template="qwen2.5", messages=messages, tools=tools)
 prompt = chat.prompt(tools=tools)
 ```
 
+### Chat with Skills
+
+Skills are lightweight `(name, description)` entries that get advertised in the
+system prompt. They are useful when an agent loads bundled instructions via a
+`load_skill` tool — the catalogue tells the model *which* skills exist.
+
+```python
+skills = [
+    {"name": "add-numbers", "description": "Adds two integers."},
+    {"name": "word-count",  "description": "Counts words in text."},
+]
+
+chat = Chat(template="qwen-skills", messages=messages, skills=skills)
+prompt = chat.prompt()
+```
+
+Skills can also be plain objects exposing `.name` and `.description` attributes
+— e.g. dataclasses or pydantic models — they don't have to be dicts.
+
+A template only renders skills if it defines a `skills_template`; passing
+`skills=` to a template without one is silently ignored.
+
 ### Chat with Vision
 
 ```python
@@ -166,15 +188,38 @@ template = Template(
 
 ### Template with Tools
 
+The tool catalogue lives in a `{tools}` placeholder in `system_template`. The
+section block that fills it is defined separately as `tools_template`. When no
+tools are passed at render time, the `{tools}` slot expands to an empty string.
+
 ```python
 template_with_tools = Template(
     name="custom-with-tools",
-    system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
-    system_template_with_tools="<|im_start|>system\n{system_message}\n\n# Tools\n{tools}<|im_end|>\n",
+    system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
+    tools_template="\n\n# Tools\n{tools}",
     system_message="You are a helpful assistant with access to tools.",
     user_template="<|im_start|>user\n{content}<|im_end|>\n",
     assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-    tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    stop_words=["<|im_end|>"]
+)
+```
+
+### Template with Skills
+
+Skills work the same way: a `{skills}` placeholder in `system_template`, filled
+by `skills_template`. The per-row format defaults to `"- {name}: {description}"`
+and can be overridden with `single_skill_template`.
+
+```python
+template_with_skills = Template(
+    name="custom-with-skills",
+    system_template="<|im_start|>system\n{system_message}{skills}<|im_end|>\n",
+    skills_template="\n\n# Skills\n<skills>\n{skills}\n</skills>",
+    single_skill_template="- {name}: {description}",
+    system_message="You are an agent.",
+    user_template="<|im_start|>user\n{content}<|im_end|>\n",
+    assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
     stop_words=["<|im_end|>"]
 )
 ```
