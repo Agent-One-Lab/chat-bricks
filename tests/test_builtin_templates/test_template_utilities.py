@@ -1,5 +1,6 @@
-from chat_bricks.templates import get_template, register_template, Template
-from chat_bricks.vision_processor import get_processor
+from chat_bricks import get_template, register_template
+from chat_bricks.templates import Template
+from chat_bricks.vision import get_processor
 
 def test_template_registration():
     register_template(
