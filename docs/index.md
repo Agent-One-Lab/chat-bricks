@@ -1,36 +1,46 @@
 # 🧩 Chat Bricks
 
-*Jinja Template is Not You Need!*
+*Correct, verifiable chat-template rendering and per-token loss masks for LLM/VLM training — with any HuggingFace model.*
 
-Chat Bricks is a powerful and flexible template system inspired by building block toys, designed to support various LLM and VLM chat templates for training and inference.
+Chat Bricks gives you the things `apply_chat_template` doesn't: **per-token `labels` and `action_mask` for multi-turn SFT and RL**, **swappable tool-call formats** for the same base model, and a **first-class `skills` block**. Rendering is verified byte-identical against the model's official template, so you can trust what hits your loss function.
 
-## Key Features
+## The problem
 
-- **Training and Inference**: Chat template formatted prompts, with tokenized inputs and masks.
-- **Modular design**: Templates are built from configurable components.
-- **Multi-modal support**: Vision-language templates are built in.
-- **Jinja template generation**: Automatic HuggingFace-compatible template generation.
-- **HuggingFace Integration**: Directly supports using an HF repo id as template.
-- **Advanced configuration**: Fine-grained control over template behavior.
+When you train on multi-turn or tool-using conversations, you need a per-token mask that says *"compute loss on these assistant tokens, ignore everything else."* HuggingFace's `apply_chat_template` doesn't produce this — `return_assistant_tokens_mask` only works on templates that ship with explicit `{% generation %}` markers, which most don't. Hand-rolling a mask from string offsets silently breaks on multi-turn, tool-call turns, or non-append-only templates. A wrong mask doesn't crash — it quietly degrades your model and you blame the data.
 
-## Quickstart
+Chat Bricks reconstructs the mask by aligning incremental renders to token spans, with model-specific overrides for templates that aren't append-only. Rendering is checked byte-for-byte against each model's official chat template in CI.
+
+## What you get
+
+- **Loss masking that works.** Per-token `labels` and `action_mask` across multi-turn, tool-call, and skill turns. Byte-identical rendering verified against the official template.
+- **Tool-call variant control.** Swap tool format on the same base model via `ToolPolicy` + `ToolFormatter` — no Jinja rewrites. See [Tools and tool-call variants](how_to_use/tools.md).
+- **Skills as a first-class block.** Advertise `(name, description)` pairs in the system prompt via `skills_template`. See [Skills](how_to_use/skills.md).
+- **Any HuggingFace model, out of the box.** `Chat(template="org/model", ...)` falls back to the tokenizer's chat template with masking reconstructed by diffing. See [Use any HuggingFace model](how_to_use/huggingface_templates.md).
+- **Verified correctness.** `compare_hf_template(...)` and CI parity tests for every built-in template. See [Verification & correctness](how_to_use/verification.md).
+- **VLM support.** Vision-language templates and a registerable vision processor. See [Vision Templates](how_to_use/vision_templates.md).
+
+## 60-second SFT example
 
 ```python
-from chat_bricks import get_template, Chat
+from transformers import AutoTokenizer
+from chat_bricks import Chat
 
-# Create a chat object with template and messages
-chat = Chat(
-    template="qwen3",
-    messages=[
-        {"role": "user", "content": "Hello, how are you?"},
-        {"role": "assistant", "content": "I am fine, thank you."}
-    ],
-)
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-3B-Instruct")
 
-# Render the final prompt
-prompt = chat.render()
-print(prompt)
+chat = Chat(template="Qwen/Qwen2.5-3B-Instruct", messages=[
+    {"role": "user", "content": "What is 3 times 5?"},
+    {"role": "assistant", "content": "", "tool_calls": [
+        {"type": "function", "function": {"name": "multiply",
+         "arguments": {"x": 3, "y": 5}}}]},
+    {"role": "tool", "content": "15"},
+    {"role": "assistant", "content": "It's 15."},
+])
+
+inputs = chat.tokenize(tokenizer)
+# inputs["input_ids"], inputs["labels"], inputs["action_mask"], inputs["attention_mask"]
 ```
+
+Continue with the [Quick Start](quick_start/use_template.md) or jump to any of the how-to pages above.
 
 
 | WeChat | Discord |

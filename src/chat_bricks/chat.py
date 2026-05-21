@@ -14,7 +14,7 @@ class Chat:
     def __init__(
         self,
         template: str | Template | HFTemplate,
-        messages: List[List[str]] = None,
+        messages: List[Dict] = None,
         tools=None,
         skills=None,
         tokenizer: PreTrainedTokenizer = None,

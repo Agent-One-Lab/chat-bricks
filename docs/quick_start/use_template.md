@@ -19,7 +19,7 @@ chat = Chat(
 )
 
 # Render a prompt string
-prompt = chat.render()
+prompt = chat.prompt()
 print(prompt)
 ```
 
@@ -61,12 +61,12 @@ custom = Template(
 )
 
 chat = Chat(template=custom, messages=[{"role": "user", "content": "Hi!"}])
-print(chat.render())
+print(chat.prompt())
 ```
 
 ## Handy Chat Methods
 
 - `add_user_message(content)` / `add_assistant_message(content)` to append turns.
 - `append(message_dict)` to add a raw message.
-- `render(add_generation_prompt=False, **kwargs)` to get the formatted prompt.
+- `prompt(add_generation_prompt=False, tools=None, skills=None, **kwargs)` to get the formatted prompt.
 - `tokenize(tokenizer, processor=None, add_generation_prompt=False, tools=None, **kwargs)` to produce token IDs, masks, labels, and action masks.

@@ -34,11 +34,14 @@ nav:
     - Overview: chat_bricks/index.md
     - Core Components: chat_bricks/core_components.md
   - How to use Chat Bricks:
-    - Usage Guide: how_to_use/basic_usage.md
-    - HuggingFace Templates: how_to_use/huggingface_templates.md
+    - Use any HuggingFace model: how_to_use/huggingface_templates.md
+    - Tools and tool-call variants: how_to_use/tools.md
+    - Skills: how_to_use/skills.md
+    - Verification & correctness: how_to_use/verification.md
     - Custom Templates: how_to_use/custom_templates.md
-    - Advanced Features: how_to_use/advanced_features.md
     - Vision Templates: how_to_use/vision_templates.md
+    - Advanced Features: how_to_use/advanced_features.md
+    - Usage Guide: how_to_use/basic_usage.md
     - More Examples: how_to_use/examples.md
 
   - API References:
