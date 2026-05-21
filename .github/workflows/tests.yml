@@ -22,10 +22,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install CPU-only PyTorch
+      - name: Install CPU-only PyTorch + torchvision
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install project and test dependencies
         run: |
