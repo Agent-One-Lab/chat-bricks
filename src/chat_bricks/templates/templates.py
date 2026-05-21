@@ -4,14 +4,25 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple, Union
 
-import torch
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
-from ..policies import AssistantPolicy, GlobalPolicy, SystemPolicy, ToolPolicy
+from ..policies import AssistantPolicy, GlobalPolicy, SkillPolicy, SystemPolicy, ToolPolicy
 from .jinja_generator import JinjaGenerator
 from .renderer import Qwen3Renderer, Renderer
 
 logger = logging.getLogger(__name__)
+
+
+def _require_torch():
+    """Lazy-import torch with a friendly error pointing to the [train] extra."""
+    try:
+        import torch
+        return torch
+    except ImportError as e:
+        raise ImportError(
+            "chat-bricks tensor outputs (return_tensors='pt') require torch. "
+            "Install with: pip install 'chat-bricks[train]'"
+        ) from e
 
 
 @dataclasses.dataclass
@@ -20,41 +31,60 @@ class Template:
 
     Args:
         name: The name of this template
-        system_template: The system template component
-        system_template_with_tools: The system template with tool usage component
+        system_template: The system template — may include ``{tools}`` and ``{skills}``
+            placeholders which are filled with the rendered section blocks.
         system_message: The default system message
         stop_words: The stop words where the model stops generating (usually EOS token)
-        tool_template: The tool response template component
+        observations_template: Wraps the whole tool-response message (renamed from the old ``tool_template``).
+        single_observation_template: Wraps one observation inside a parallel response (renamed from the old ``tool_observation_template``).
+        tools_template / single_tool_template: Catalogue section + per-tool wrapper.
+            Filled into ``system_template``'s ``{tools}`` placeholder.
+        skills_template / single_skill_template: Skill catalogue section + per-skill wrapper.
+            Filled into ``system_template``'s ``{skills}`` placeholder.
         user_template: The user template component
         user_template_with_tools: The user template with tool usage component
         assistant_template: The assistant template component
         global_policy: The global policy, controls the behavior of the template
         system_policy: The system message policy, controls the behavior of forming the system message
         tool_policy: The tool policy for the template, controls the behavior of forming tools.
+        skill_policy: The skill policy for the template, controls how skill entries are rendered.
     """
 
     # The name of this template
     name: str
-    # The template of the system prompt
+    # The template of the system prompt — fills ``{system_message}``, plus optional
+    # ``{tools}`` / ``{skills}`` slots filled by the section templates below.
     system_template: str = "{system_message}"
-    # The template of the system prompt with tool usage
-    system_template_with_tools: str = None
     # The system message
     system_message: str = ""
-    # Behaviors
-    # The tool template
-    tool_template: str = None
-    # The single tool observation template
-    tool_observation_template: str = "{observation}"
+    # ----- Tool response (the message a "tool" role contributes) -----
+    # ``observations_template`` wraps the whole tool-response message.
+    # ``single_observation_template`` wraps a single observation within a parallel
+    # response.
+    observations_template: str = None
+    single_observation_template: str = "{observation}"
     # The user template
     user_template: str = None
     user_template_with_tools: str = None
     # The assistant template
     assistant_template: str = None
-    # The parallel tool calls template
+    # ----- Tool calls (parallel calls in an assistant message) -----
+    # ``tool_calls_template`` wraps the parallel block;
+    # ``single_tool_call_template`` wraps one call within it.
     tool_calls_template: str = "{tool_calls}"
-    # The single tool call template
-    tool_call_template: str = "{tool_call}"
+    single_tool_call_template: str = "{tool_call}"
+
+    # ---- catalogue blocks (system-prompt section templates) ----
+    # The renderer fills the ``{tools}`` / ``{skills}`` slots of ``system_template``
+    # via a two-pass substitution:
+    #   1. each item is wrapped by ``single_tool_template`` / ``single_skill_template``
+    #   2. the joined items are wrapped by ``tools_template`` / ``skills_template``
+    #   3. the result is substituted into the system template's ``{tools}``/``{skills}``
+    # Section templates are None when the template doesn't advertise that block.
+    tools_template: str = None
+    single_tool_template: str = None
+    skills_template: str = None
+    single_skill_template: str = None
 
     # Stop criteria (the default one is EOS token)
     stop_words: Union[str, List[str]] = None
@@ -68,6 +98,8 @@ class Template:
     assistant_policy: "AssistantPolicy" = None
     # Tool policy for this template
     tool_policy: "ToolPolicy" = None
+    # Skill policy for this template
+    skill_policy: "SkillPolicy" = None
 
     ## vision part
     vision_start: str = None
@@ -88,6 +120,8 @@ class Template:
             self.system_policy = SystemPolicy()
         if self.assistant_policy is None:
             self.assistant_policy = AssistantPolicy()
+        if self.skill_policy is None:
+            self.skill_policy = SkillPolicy()
 
     def _register_vision_processor(self):
         """Automatically register a vision processor for this template"""
@@ -137,17 +171,18 @@ class Template:
             return "patch_based"
 
     def _supports_tool_call(self) -> bool:
-        if (
-            self.system_template_with_tools or self.user_template_with_tools
-        ) and self.tool_template:
-            return True
-        else:
-            return False
+        has_tool_slot = (
+            (self.system_template and "{tools}" in self.system_template)
+            or self.tools_template
+            or self.user_template_with_tools
+        )
+        return bool(has_tool_slot and self.observations_template)
 
     def render(
         self,
         messages: List[Dict],
         tools=None,
+        skills=None,
         add_generation_prompt: bool = False,
         train_on_last_turn_only: bool = False,
     ) -> Tuple[str, List[str], List[bool]]:
@@ -157,6 +192,10 @@ class Template:
         Args:
             messages: The list of messages
             tools: The list of tools
+            skills: Optional list of skill objects/dicts to advertise in the system prompt's
+                ``{skills}`` placeholder. Each entry needs at least ``name`` and ``description``
+                (either as dict keys or attributes). The template's ``skills_template`` and
+                ``single_skill_template`` (or ``skill_policy``) control the rendered form.
             add_generation_prompt: Whether to add the generation prompt
 
         Returns:
@@ -165,7 +204,7 @@ class Template:
             mask_flags: The list of mask flags for the elements
         """
         prompt, elements, mask_flags = Renderer(self).render(
-            messages, tools, add_generation_prompt
+            messages, tools, skills, add_generation_prompt
         )
 
         # If training only on the last turn, keep only the last masked segment
@@ -189,6 +228,7 @@ class Template:
         tokenizer: PreTrainedTokenizer,
         return_tensors: str = None,
         tools=None,
+        skills=None,
         add_generation_prompt=False,
         processor=None,
         train_on_last_turn_only=False,
@@ -201,6 +241,7 @@ class Template:
             tokenizer: The tokenizer
             return_tensors: The return tensors
             tools: The list of tools
+            skills: Optional list of skill objects to render into the system prompt.
             add_generation_prompt: Whether to add the generation prefix
             processor: The processor for vision templates
 
@@ -217,6 +258,7 @@ class Template:
                 tokenizer,
                 return_tensors,
                 tools,
+                skills=skills,
                 add_generation_prompt=add_generation_prompt,
                 processor=processor,
                 train_on_last_turn_only=train_on_last_turn_only,
@@ -229,6 +271,7 @@ class Template:
                 tokenizer,
                 return_tensors,
                 tools,
+                skills=skills,
                 add_generation_prompt=add_generation_prompt,
                 train_on_last_turn_only=train_on_last_turn_only,
                 **kwargs,
@@ -240,6 +283,7 @@ class Template:
         tokenizer: PreTrainedTokenizer,
         return_tensors: str = None,
         tools=None,
+        skills=None,
         add_generation_prompt=False,
         train_on_last_turn_only=False,
         **kwargs,
@@ -247,7 +291,7 @@ class Template:
         logger.debug(f"[Template] Encoding standard for template: {self.name}")
         """Standard encoding without vision support"""
         prompt, elements, mask_flags = self.render(
-            messages, tools=tools, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
+            messages, tools=tools, skills=skills, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
         input_ids = []
         attention_mask = []
@@ -280,6 +324,7 @@ class Template:
             action_mask=action_mask,
         )
         if return_tensors == "pt":
+            torch = _require_torch()
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
         return inputs
 
@@ -289,6 +334,7 @@ class Template:
         tokenizer: PreTrainedTokenizer,
         return_tensors: str = None,
         tools=None,
+        skills=None,
         add_generation_prompt=False,
         processor=None,
         train_on_last_turn_only=False,
@@ -310,7 +356,7 @@ class Template:
 
         # Get base prompt and mask information
         prompt, elements, mask_flags = self.render(
-            messages, tools=tools, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
+            messages, tools=tools, skills=skills, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
 
         # Extract vision inputs
@@ -386,20 +432,21 @@ class Template:
         messages: List[Dict],
         add_generation_prompt: bool = False,
         tools=None,
+        skills=None,
         **kwargs,
     ):
         from termcolor import colored
 
         prompt, elements, mask_flags = self.render(
-            messages, add_generation_prompt=add_generation_prompt, tools=tools, **kwargs
+            messages, add_generation_prompt=add_generation_prompt, tools=tools, skills=skills, **kwargs
         )
 
         prompt = ""
         for element, mask_flag in zip(elements, mask_flags):
             if mask_flag:
-                prompt += colored(element, "red")
+                prompt += colored(element, "red", force_color=True)
             else:
-                prompt += colored(element, "green")
+                prompt += colored(element, "green", force_color=True)
         return prompt, elements, mask_flags
 
     def set_system_message(self, system_message: str):
@@ -410,15 +457,18 @@ class Template:
         return self.__class__(
             name=self.name,
             system_template=self.system_template,
-            system_template_with_tools=self.system_template_with_tools,
             system_message=self.system_message,
             user_template=self.user_template,
             user_template_with_tools=self.user_template_with_tools,
             assistant_template=self.assistant_template,
             tool_calls_template=self.tool_calls_template,
-            tool_call_template=self.tool_call_template,
-            tool_template=self.tool_template,
-            tool_observation_template=self.tool_observation_template,
+            single_tool_call_template=self.single_tool_call_template,
+            observations_template=self.observations_template,
+            single_observation_template=self.single_observation_template,
+            tools_template=self.tools_template,
+            single_tool_template=self.single_tool_template,
+            skills_template=self.skills_template,
+            single_skill_template=self.single_skill_template,
             stop_words=self.stop_words,
             generation_prompt=self.generation_prompt,
             vision_start=self.vision_start,
@@ -428,6 +478,7 @@ class Template:
             global_policy=deepcopy(self.global_policy),
             system_policy=deepcopy(self.system_policy),
             tool_policy=deepcopy(self.tool_policy),
+            skill_policy=deepcopy(self.skill_policy),
             assistant_policy=deepcopy(self.assistant_policy),
             chat_template=self.chat_template,
         )
@@ -436,7 +487,9 @@ class Template:
         return {
             "template_name": self.name,
             "system_message": self.system_message,
-            "system_template_with_tools": self.system_template_with_tools,
+            "system_template": self.system_template,
+            "tools_template": self.tools_template,
+            "skills_template": self.skills_template,
             "stop_words": self.stop_words,
             "vision_start": self.vision_start,
             "vision_end": self.vision_end,
@@ -450,11 +503,13 @@ class Qwen3Template(Template):
         self,
         messages: List[Dict],
         tools=None,
+        skills=None,
         add_generation_prompt: bool = False,
         enable_thinking: bool = False,
+        **kwargs,
     ) -> str:
         return Qwen3Renderer(self).render(
-            messages, tools, add_generation_prompt, enable_thinking
+            messages, tools, skills, add_generation_prompt, enable_thinking
         )
 
 
@@ -488,10 +543,15 @@ class HFTemplate(Template):
         self,
         messages: List[Dict],
         tools=None,
+        skills=None,
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> Tuple[str, List[str], List[bool]]:
         """Render messages using HF tokenizer's chat template.
+
+        HF tokenizer templates do not surface a ``skills`` concept, so the
+        argument is accepted but ignored here. Use a chat-bricks template
+        (with ``skills_template``) if you need skills rendering.
 
         Returns:
             prompt: The final prompt string
@@ -508,6 +568,7 @@ class HFTemplate(Template):
         tokenizer: PreTrainedTokenizer,
         return_tensors: str = None,
         tools=None,
+        skills=None,
         add_generation_prompt=False,
         processor=None,
         **kwargs,
@@ -574,6 +635,7 @@ class HFTemplate(Template):
         )
 
         if return_tensors == "pt":
+            torch = _require_torch()
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
 
         return inputs

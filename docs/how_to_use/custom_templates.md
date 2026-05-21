@@ -20,7 +20,7 @@ register_template(
         system_message="You are a helpful assistant.", # Default system message
         user_template="User: {content}",           # User message format
         assistant_template="Assistant: {content}</s>",      # Assistant message format
-        tool_template="Tool: {observation}",       # Tool response format
+        observations_template="Tool: {observation}",  # Tool response format
         stop_words=["</s>"]                 # Stop generation tokens
     )
 )
@@ -58,8 +58,15 @@ print(prompt)
 template = Template(
     # ... core fields ...
 
-    # Tool support
-    system_template_with_tools="System: {system_message}\n\nTools: {tools}",
+    # Tool support — the {tools} slot in system_template is filled by tools_template
+    system_template="System: {system_message}{tools}",
+    tools_template="\n\nTools: {tools}",
+    # Optional: wrap each individual tool entry before joining
+    # single_tool_template="\n- {tool}",
+
+    # Skill support — same two-pass pattern, but skills always live in the system message
+    skills_template="\n\nSkills:\n{skills}",
+    single_skill_template="- {name}: {description}",
 
     # Vision support
     vision_start="<vision>",
@@ -131,13 +138,15 @@ print(chat.prompt())
 register_template(
     Template(
         name="tool-enabled",
-        system_template="System: {system_message}\n",
-        system_template_with_tools="System: {system_message}\n\nAvailable Tools:\n{tools}\n",
+        # {tools} slot in system_template is filled by tools_template when tools are passed;
+        # when no tools are passed it expands to "".
+        system_template="System: {system_message}{tools}\n",
+        tools_template="\n\nAvailable Tools:\n{tools}",
         system_message="You are an AI assistant with access to tools.",
         user_template="User: {content}\n",
         user_template_with_tools="User: {content}\n\nTools: {tools}\n",
         assistant_template="Assistant: {content}\n",
-        tool_template="Tool Response: {observation}\n",
+        observations_template="Tool Response: {observation}\n",
         stop_words=["\n"]
     )
 )
@@ -165,7 +174,44 @@ chat = Chat(template="tool-enabled", messages=messages, tools=tools)
 print(chat.prompt())
 ```
 
-### 5. Vision-Enabled Template
+### 5. Skill-Enabled Template
+
+Skills are `(name, description)` pairs that get listed in the system prompt so
+the model knows which named skills it can load (typically via a `load_skill`
+tool). They use the same two-pass pattern as tools: each entry is wrapped by
+`single_skill_template`, joined, then wrapped by `skills_template` and inserted
+into the `{skills}` slot of `system_template`.
+
+```python
+register_template(
+    Template(
+        name="skill-enabled",
+        system_template="<|im_start|>system\n{system_message}{tools}{skills}<|im_end|>\n",
+        tools_template="\n\n# Tools\n<tools>\n{tools}\n</tools>",
+        skills_template="\n\n# Skills\n<skills>\n{skills}\n</skills>",
+        single_skill_template="- {name}: {description}",  # default
+        system_message="You are an agent.",
+        user_template="<|im_start|>user\n{content}<|im_end|>\n",
+        assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
+        observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+        stop_words=["<|im_end|>"],
+    )
+)
+
+skills = [
+    {"name": "add-numbers", "description": "Adds two integers."},
+    {"name": "word-count",  "description": "Counts words in text."},
+]
+chat = Chat(template="skill-enabled", messages=messages, skills=skills)
+print(chat.prompt())
+```
+
+Skill entries may be dicts (as above) or any object that exposes `.name` and
+`.description` attributes (e.g. dataclasses, pydantic models). If a template has
+no `skills_template`, passing `skills=...` is silently ignored — making the
+argument safe to thread through generic code.
+
+### 6. Vision-Enabled Template
 
 ```python
 register_template(
@@ -281,16 +327,20 @@ from chat_bricks import ToolPlacement
 comprehensive_template = Template(
     name="comprehensive-example",
 
-    # Basic templates
-    system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+    # Basic templates — {tools} and {skills} slots are filled by the section
+    # templates below; they expand to "" when no tools/skills are passed.
+    system_template="<|im_start|>system\n{system_message}{tools}{skills}<|im_end|>\n",
     system_message="You are a comprehensive AI assistant with multiple capabilities.",
 
     # Tool support
-    system_template_with_tools="<|im_start|>system\n{system_message}\n\nAvailable Tools:\n{tools}<|im_end|>\n",
+    tools_template="\n\nAvailable Tools:\n{tools}",
     user_template="<|im_start|>user\n{content}<|im_end|>\n",
     user_template_with_tools="<|im_start|>user\n{content}\n\nTools: {tools}<|im_end|>\n",
     assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-    tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+
+    # Skill support
+    skills_template="\n\nSkills:\n{skills}",
 
     # Vision support
     vision_start="<|vision_start|>",
@@ -451,11 +501,12 @@ from chat_bricks import ToolPlacement
 coding_template = Template(
     name="coding-assistant",
 
-    # System message
+    # System message — the {tools} slot stays empty when no tools are passed,
+    # so a single template handles both the tool-free and tool-enabled cases.
     system_template="""<|im_start|>system
 You are an expert coding assistant. You help users write, debug, and understand code.
 Always provide clear explanations and follow best practices.
-{system_message}<|im_end|>
+{system_message}{tools}<|im_end|>
 """,
     system_message="You are an expert coding assistant.",
 
@@ -464,16 +515,9 @@ Always provide clear explanations and follow best practices.
     assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
 
     # Tool support for code execution
-    system_template_with_tools="""<|im_start|>system
-You are an expert coding assistant with access to code execution tools.
-Always think through the problem before writing code.
-{system_message}
-
-Available Tools:
-{tools}<|im_end|>
-""",
+    tools_template="\n\nAvailable Tools:\n{tools}",
     user_template_with_tools="<|im_start|>user\n{content}\n\nTools: {tools}<|im_end|>\n",
-    tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
 
     # Stop words
     stop_words=["<|im_end|>"],

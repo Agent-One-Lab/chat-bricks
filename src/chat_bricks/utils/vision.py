@@ -319,7 +319,7 @@ def is_vision_lm(model_name: str) -> bool:
     if model_name in _VISION_LM_CACHE:
         return _VISION_LM_CACHE[model_name]
 
-    config = AutoConfig.from_pretrained(model_name)
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     result = is_vlm_by_config(config)
     _VISION_LM_CACHE[model_name] = result
     return result

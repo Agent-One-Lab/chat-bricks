@@ -2,7 +2,7 @@ from chat_bricks.utils import tokenize_conversation
 import pytest
 from transformers import AutoTokenizer
 import torch
-from chat_bricks.templates import Chat
+from chat_bricks import Chat
 
 @pytest.mark.parametrize("template", ["deepseek-r1-distill-qwen"])
 @pytest.mark.parametrize("messages", [

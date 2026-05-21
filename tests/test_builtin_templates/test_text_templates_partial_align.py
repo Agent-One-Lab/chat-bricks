@@ -1,6 +1,6 @@
 import pytest
 from transformers import AutoTokenizer
-from chat_bricks.templates import get_template
+from chat_bricks import get_template
 from chat_bricks.utils import compare_hf_template
 
 # nemotron, phi-4, glm-4

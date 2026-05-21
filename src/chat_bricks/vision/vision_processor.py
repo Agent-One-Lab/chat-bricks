@@ -3,6 +3,8 @@ Comprehensive multi-modal vision processor that handles vision processing separa
 The pipeline is: Template → Human-readable prompt → Vision processor → LLM-ready inputs.
 """
 
+from __future__ import annotations
+
 import base64
 import inspect
 import math
@@ -15,10 +17,24 @@ from typing import (TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal,
                     Optional, TypedDict, Union)
 
 import numpy as np
-import torch
 from PIL import Image
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import get_image_size, to_numpy_array
+
+if TYPE_CHECKING:
+    import torch
+
+
+def _require_torch():
+    """Lazy-import torch with a friendly error pointing to the [train] extra."""
+    try:
+        import torch
+        return torch
+    except ImportError as e:
+        raise ImportError(
+            "chat-bricks vision processing requires torch. "
+            "Install with: pip install 'chat-bricks[train]'"
+        ) from e
 
 if TYPE_CHECKING:
     from transformers import ProcessorMixin
@@ -230,6 +246,7 @@ class VisionProcessor(ABC):
 
         # Convert to tensors if requested
         if return_tensors == "pt":
+            torch = _require_torch()
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
 
         # Step 4: Add vision inputs
@@ -467,7 +484,9 @@ class PatchBasedProcessor(VisionProcessor):
             # Try grid-based calculation first (HuggingFace method)
             if "image_grid_thw" in image_data:
                 grid_info = image_data["image_grid_thw"]
-                if isinstance(grid_info, torch.Tensor):
+                # Duck-type the tensor check so this branch doesn't require torch
+                # for callers that pass a list or scalar grid_info.
+                if hasattr(grid_info, "prod") and hasattr(grid_info, "item"):
                     grid_prod = grid_info.prod().item()
                 elif isinstance(grid_info, list):
                     grid_prod = math.prod(grid_info)
@@ -653,7 +672,9 @@ class QwenVLProcessor(PatchBasedProcessor):
         if "image_grid_thw" in image_data:
             # Use grid information for more accurate token calculation
             grid_info = image_data["image_grid_thw"]
-            if isinstance(grid_info, torch.Tensor):
+            # Duck-type the tensor check so this branch doesn't require torch
+            # for callers that pass a list or scalar grid_info.
+            if hasattr(grid_info, "prod") and hasattr(grid_info, "item"):
                 grid_prod = grid_info.prod().item()
             elif isinstance(grid_info, list):
                 grid_prod = math.prod(grid_info)

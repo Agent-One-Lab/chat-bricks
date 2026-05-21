@@ -58,13 +58,13 @@ vision_template = register_template(
 vision_tool_template = register_template(
     Template(
         name="vision-tool-enabled",
-        system_template="You are a vision-capable AI assistant.\n",
-        system_template_with_tools="You are a vision-capable AI assistant with tools.\n\nTools: {tools}\n",
+        system_template="You are a vision-capable AI assistant{tools}.\n",
+        tools_template=" with tools.\n\nTools: {tools}",
         system_message="You are a vision-capable AI assistant with tools.",
         user_template="User: {content}\n",
         user_template_with_tools="User: {content}\n\nTools: {tools}\n",
         assistant_template="Assistant: {content}\n",
-        tool_template="Tool: {observation}\n",
+        observations_template="Tool: {observation}\n",
 
         # Vision configuration
         vision_start="<|vision_start|>",
@@ -601,16 +601,16 @@ from chat_bricks import ToolPlacement
 vision_template = Template(
     name="comprehensive-vision",
 
-    # Basic templates
-    system_template="<|im_start|>system\n{system_message}<|im_end|>\n",
+    # Basic templates — {tools} stays empty when no tools are passed
+    system_template="<|im_start|>system\n{system_message}{tools}<|im_end|>\n",
     system_message="You are a comprehensive vision-capable AI assistant.",
 
     # Tool support
-    system_template_with_tools="<|im_start|>system\n{system_message}\n\nAvailable Tools:\n{tools}<|im_end|>\n",
+    tools_template="\n\nAvailable Tools:\n{tools}",
     user_template="<|im_start|>user\n{content}<|im_end|>\n",
     user_template_with_tools="<|im_start|>user\n{content}\n\nTools: {tools}<|im_end|>\n",
     assistant_template="<|im_start|>assistant\n{content}<|im_end|>\n",
-    tool_template="<|im_start|>tool\n{observation}<|im_end|>\n",
+    observations_template="<|im_start|>tool\n{observation}<|im_end|>\n",
 
     # Vision support
     vision_start="<|vision_start|>",

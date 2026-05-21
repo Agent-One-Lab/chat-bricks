@@ -60,7 +60,7 @@ def test_template_tokenize(template, messages, tools, add_generation_prompt):
     chat = Chat(template, messages, tools=tools)
     prompt = chat.prompt(add_generation_prompt=add_generation_prompt, tools=tools)
 
-    hf_inputs = tokenizer(prompt, return_tensors="pt")
+    hf_inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
 
     implemented_inputs = tokenize_conversation(messages, tokenizer, template, max_length=2048, tools=tools, add_generation_prompt=add_generation_prompt, return_tensors="pt")
 
