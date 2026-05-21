@@ -4,7 +4,6 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple, Union
 
-import torch
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from ..policies import AssistantPolicy, GlobalPolicy, SkillPolicy, SystemPolicy, ToolPolicy
@@ -12,6 +11,18 @@ from .jinja_generator import JinjaGenerator
 from .renderer import Qwen3Renderer, Renderer
 
 logger = logging.getLogger(__name__)
+
+
+def _require_torch():
+    """Lazy-import torch with a friendly error pointing to the [train] extra."""
+    try:
+        import torch
+        return torch
+    except ImportError as e:
+        raise ImportError(
+            "chat-bricks tensor outputs (return_tensors='pt') require torch. "
+            "Install with: pip install 'chat-bricks[train]'"
+        ) from e
 
 
 @dataclasses.dataclass
@@ -313,6 +324,7 @@ class Template:
             action_mask=action_mask,
         )
         if return_tensors == "pt":
+            torch = _require_torch()
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
         return inputs
 
@@ -432,9 +444,9 @@ class Template:
         prompt = ""
         for element, mask_flag in zip(elements, mask_flags):
             if mask_flag:
-                prompt += colored(element, "red")
+                prompt += colored(element, "red", force_color=True)
             else:
-                prompt += colored(element, "green")
+                prompt += colored(element, "green", force_color=True)
         return prompt, elements, mask_flags
 
     def set_system_message(self, system_message: str):
@@ -623,6 +635,7 @@ class HFTemplate(Template):
         )
 
         if return_tensors == "pt":
+            torch = _require_torch()
             inputs = {k: torch.tensor([v]) for k, v in inputs.items()}
 
         return inputs

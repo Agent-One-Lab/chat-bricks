@@ -1,10 +1,20 @@
 import logging
 
-import torch
-
 from ..registry import get_template
 
 logger = logging.getLogger(__name__)
+
+
+def _require_torch():
+    """Lazy-import torch with a friendly error pointing to the [train] extra."""
+    try:
+        import torch
+        return torch
+    except ImportError as e:
+        raise ImportError(
+            "chat-bricks tokenization requires torch. "
+            "Install with: pip install 'chat-bricks[train]'"
+        ) from e
 
 
 def transform_multi_turn_reward_mask(action_mask):
@@ -12,6 +22,7 @@ def transform_multi_turn_reward_mask(action_mask):
     Given a binary action_mask of shape (batch_size, sequence_length),
     returns a tensor of the same shape with 1 only at the position where the action_mask is 1 and the next position is 0,
     """
+    torch = _require_torch()
     # action_mask: shape (batch_size, sequence_length)
     batch_size, seq_length = action_mask.shape
 
@@ -41,6 +52,7 @@ def transform_reward_mask(action_mask):
     returns a tensor of the same shape with 1 only at the rightmost (last) 1 per row,
     and 0 everywhere else.
     """
+    torch = _require_torch()
     batch_size, seq_length = action_mask.shape
 
     # Check for rows that contain at least one 1.
@@ -136,6 +148,7 @@ def tokenize_conversations(
     train_on_last_turn_only=False,
     **kwargs,
 ):
+    torch = _require_torch()
     batch_input_ids = []
     batch_attention_masks = []
     batch_labels = []

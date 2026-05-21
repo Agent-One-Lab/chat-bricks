@@ -18,8 +18,9 @@ classifiers = [
 
 dependencies=[
     "transformers",
-    "torch",
     "termcolor",
+    "Pillow",
+    "requests",
 ]
 
 [tool.setuptools]
@@ -29,6 +30,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [project.optional-dependencies]
+train = [
+    "torch",
+]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",

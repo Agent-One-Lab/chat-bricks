@@ -12,7 +12,18 @@ from .templates import HFTemplate, Qwen3Template, Template
 from .utils import (compare_hf_template, display_messages, image_to_data_uri,
                     tokenize_conversation, tokenize_conversations,
                     validate_messages_for_template, split_messages_with_assistant)
-from .vision import VisionProcessor, VisionProcessorConfig, register_processor
+
+# Vision symbols are loaded lazily so that importing chat_bricks does not pull
+# in torch (vision_processor depends on it). Install the [train] extra to get
+# torch; vision use will then work transparently via this __getattr__ hook.
+_LAZY_VISION = {"VisionProcessor", "VisionProcessorConfig", "register_processor"}
+
+
+def __getattr__(name):
+    if name in _LAZY_VISION:
+        from . import vision as _vision
+        return getattr(_vision, name)
+    raise AttributeError(f"module 'chat_bricks' has no attribute {name!r}")
 
 __all__ = [
     "Chat",
