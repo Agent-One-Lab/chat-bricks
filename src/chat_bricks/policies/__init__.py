@@ -3,7 +3,8 @@ from .global_policy import GlobalPolicy
 from .system_policy import (Llama32DateProcessor, SystemContentProcessor,
                             SystemPolicy)
 from .skill_policy import SkillPolicy
-from .tool_policy import (JsonCompactFormatter, JsonFormatter,
+from .tool_policy import (DeepSeekV4ToolCallContentProcessor,
+                          JsonCompactFormatter, JsonFormatter,
                           JsonFormatterNoBreakLine, JsonIndentedFormatter,
                           JsonMinifiedFormatter, JsonQwenFormatter,
                           KimiK2ToolCallContentProcessor, ToolContentProcessor,
@@ -24,6 +25,7 @@ __all__ = [
     "JsonIndentedFormatter",
     "JsonMinifiedFormatter",
     "JsonQwenFormatter",
+    "DeepSeekV4ToolCallContentProcessor",
     "KimiK2ToolCallContentProcessor",
     "ToolContentProcessor",
     "ToolFormatter",

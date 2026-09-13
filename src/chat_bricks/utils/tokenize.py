@@ -155,7 +155,10 @@ def tokenize_conversations(
     batch_action_masks = []
     batch_mm_inputs = []
     # TODO: add multiprocessing
-    template = get_template(template)
+    # Forward the caller's tokenizer: for HF template names, get_template()
+    # otherwise reloads a fresh tokenizer via from_pretrained on EVERY batch
+    # and HFTemplate.encode then uses that copy instead of the one passed in.
+    template = get_template(template, tokenizer=tokenizer)
 
     for i, messages in enumerate(messages_list):
         # logger.info(f"[chat-bricks/tokenize_conversations] Tokenizing conversation {i+1} of {len(messages_list)}")

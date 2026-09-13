@@ -348,3 +348,85 @@ class KimiK2ToolCallContentProcessor(ToolContentProcessor):
             "{% set arguments = tool_call['arguments'] | tojson if 'arguments' in tool_call else '' %}"
             "{{ tool_id }}<|tool_call_argument_begin|>{{ arguments }}"
         )
+
+
+# The DSML token used by DeepSeek-V4 to delimit structured markup. The bars are
+# the full-width form ``U+FF5C`` (｜), matching the model's special tokens.
+DEEPSEEK_V4_DSML_TOKEN = "｜DSML｜"
+
+
+class DeepSeekV4ToolCallContentProcessor(ToolContentProcessor):
+    """Serialize a single tool call into DeepSeek-V4's DSML ``invoke`` block.
+
+    DeepSeek-V4 does not encode tool-call arguments as one JSON blob. Instead
+    each argument becomes its own ``<｜DSML｜parameter>`` element, and the
+    serialization depends on the *value type*:
+
+    - ``string`` values are emitted verbatim with ``string="true"``.
+    - everything else (numbers, booleans, arrays, objects) is JSON-encoded with
+      ``string="false"``.
+
+    The produced text is a complete ``invoke`` block::
+
+        <｜DSML｜invoke name="get_weather">
+        <｜DSML｜parameter name="location" string="true">Beijing</｜DSML｜parameter>
+        <｜DSML｜parameter name="unit" string="false">["c","f"]</｜DSML｜parameter>
+        </｜DSML｜invoke>
+
+    It mirrors ``encode_arguments_to_dsml`` from the model's reference
+    ``encoding_dsv4.py``. Parallel calls are joined and wrapped by the
+    template's ``tool_calls_template`` / ``single_tool_call_template``.
+    """
+
+    DSML = DEEPSEEK_V4_DSML_TOKEN
+
+    def __call__(self, tool: Dict) -> str:
+        assert isinstance(tool, dict), "Tool call must be a dictionary"
+
+        if "type" in tool and tool["type"] == "function":
+            tool_call = tool["function"]
+        else:
+            tool_call = tool
+
+        name = tool_call["name"]
+        raw_args = tool_call.get("arguments", "{}")
+        if isinstance(raw_args, str):
+            try:
+                arguments = json.loads(raw_args)
+            except Exception:
+                # Match the reference: un-parseable args become a single
+                # ``arguments`` string parameter rather than crashing.
+                arguments = {"arguments": raw_args}
+        else:
+            arguments = raw_args
+
+        param_lines = []
+        for key, value in arguments.items():
+            is_str = isinstance(value, str)
+            rendered = value if is_str else json.dumps(value, ensure_ascii=False)
+            param_lines.append(
+                f'<{self.DSML}parameter name="{key}" string="{"true" if is_str else "false"}">'
+                f"{rendered}</{self.DSML}parameter>"
+            )
+
+        params = "\n".join(param_lines)
+        return f'<{self.DSML}invoke name="{name}">\n{params}\n</{self.DSML}invoke>'
+
+    def jinja(self) -> str:
+        """Best-effort Jinja mirror of :meth:`__call__`.
+
+        DeepSeek-V4 ships a Python encoder (``encoding_dsv4.py``), not a Jinja
+        ``chat_template``, so there is no upstream template to match byte-for-
+        byte. This snippet reproduces the DSML ``invoke`` block when ``arguments``
+        is already a mapping; the Python render path is authoritative.
+        """
+        dsml = self.DSML
+        return (
+            "{%- set tc = tool['function'] if 'type' in tool and tool['type'] == 'function' else tool -%}"
+            f'<{dsml}invoke name="{{{{ tc["name"] }}}}">\n'
+            "{%- for k, v in tc['arguments'].items() %}\n"
+            f'<{dsml}parameter name="{{{{ k }}}}" string="{{{{ \'true\' if v is string else \'false\' }}}}">'
+            f"{{{{ v if v is string else (v | tojson) }}}}</{dsml}parameter>"
+            "{%- endfor %}\n"
+            f"</{dsml}invoke>"
+        )

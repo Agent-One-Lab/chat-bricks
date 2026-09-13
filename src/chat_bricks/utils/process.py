@@ -2,7 +2,9 @@ import re
 from typing import Any, List
 import copy
 
-from ..vision import get_processor
+# NOTE: ``get_processor`` lives in ``..vision``, which imports the vision
+# processor -> transformers -> torch (~5s). It's imported lazily inside the
+# functions that use it so a bare ``import chat_bricks`` doesn't pay for torch.
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")  # matches any ANSI color/style code
 
@@ -47,6 +49,8 @@ def convert_inputs_to_vision_inputs(
     3. Final result is directly usable by LLMs with model(**inputs)
     """
     # Get the vision processor for this template
+    from ..vision import get_processor  # lazy: pulls transformers -> torch
+
     vision_processor = get_processor(template)
     if vision_processor is None:
         raise ValueError(f"No vision processor registered for template: {template}")
@@ -104,6 +108,8 @@ def process_prompt_with_vision(
     videos: list = None,
 ) -> dict:
     """Process a prompt with vision support"""
+    from ..vision import get_processor  # lazy: pulls transformers -> torch
+
     vision_processor = get_processor(template)
     if vision_processor is None:
         # If no vision processor, just return tokenized prompt

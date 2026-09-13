@@ -38,6 +38,7 @@ nav:
     - Tools and tool-call variants: how_to_use/tools.md
     - Skills: how_to_use/skills.md
     - Verification & correctness: how_to_use/verification.md
+    - Train on sampled token ids (RL): how_to_use/token_ids.md
     - Custom Templates: how_to_use/custom_templates.md
     - Vision Templates: how_to_use/vision_templates.md
     - Advanced Features: how_to_use/advanced_features.md

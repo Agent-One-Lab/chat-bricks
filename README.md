@@ -206,6 +206,22 @@ inputs = chat.tokenize(tok, train_on_last_turn_only=True)
 # Useful for RL rollouts or when earlier turns are demonstrations.
 ```
 
+### Train on the sampled token ids (RL token drift)
+
+In RL, re-tokenizing a decoded response does not always reproduce the ids the model
+sampled (Qwen2.5 samples `<think>` as `[27, 26865, 29]` but re-encodes it as
+`[13708, 766, 29]`; native tool calls get re-serialized) — so updates go off-policy and
+the KL drifts. Put the sampled ids on the assistant message and they are spliced in
+verbatim; masks, labels and the reward mask are unchanged.
+
+```python
+messages[-1]["token_ids"] = response_token_ids   # e.g. vLLM output.token_ids, eos included
+inputs = tokenize_conversations([messages], tokenizer=tok, template="Qwen/Qwen2.5-1.5B-Instruct", max_length=None)
+# inputs["input_ids"] carries the sampled ids for the assistant span, not a re-encoding.
+```
+
+See [docs/how_to_use/token_ids.md](docs/how_to_use/token_ids.md).
+
 ### Verify a template before training
 
 ```python
@@ -230,6 +246,7 @@ Recommended starting points:
 - **[Tools and tool-call variants](docs/how_to_use/tools.md)** — policies, formatters, placement, custom formats.
 - **[Skills](docs/how_to_use/skills.md)** — the skills section and `SkillPolicy`.
 - **[Verification & correctness](docs/how_to_use/verification.md)** — prove your template is right before you train on it.
+- **[Train on sampled token ids](docs/how_to_use/token_ids.md)** — splice the ids the model actually sampled to remove RL token drift.
 - **[Custom Templates](docs/how_to_use/custom_templates.md)** — full reference for composing a template from scratch.
 
 ## Community

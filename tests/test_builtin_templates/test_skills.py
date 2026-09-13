@@ -278,8 +278,8 @@ def test_hf_template_silently_ignores_skills_argument():
         pytest.skip(f"Tokenizer not available: {e}")
 
     template = HFTemplate(name="Qwen/Qwen2.5-0.5B-Instruct", tokenizer=tokenizer)
-    prompt_no_skills, _, _ = template.render(SYSTEM_MESSAGES)
-    prompt_with_skills, _, _ = template.render(SYSTEM_MESSAGES, skills=SKILLS)
+    prompt_no_skills, _, _, _ = template.render(SYSTEM_MESSAGES)
+    prompt_with_skills, _, _, _ = template.render(SYSTEM_MESSAGES, skills=SKILLS)
     # No raise + skills don't change the output (HF template doesn't know about them)
     assert prompt_no_skills == prompt_with_skills
     assert "add-numbers" not in prompt_with_skills

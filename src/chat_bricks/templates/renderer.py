@@ -10,6 +10,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Process-wide cache of the assistant-content glue probe, keyed by template
+# identity. The probe is a pure function of the template, so it runs once per
+# distinct template for the life of the process -- regardless of how many
+# Template copies, Renderer instances, or tokenize_conversations batches are
+# created (get_template() copies base templates and rebuilds HFTemplates).
+_ASSISTANT_GLUE_CACHE: Dict = {}
+
 
 class Renderer:
     def __init__(self, template: "Template"):
@@ -102,7 +109,9 @@ class Renderer:
             if message["role"] == "assistant" and "tool_calls" in message:
                 tool_calls_str = self._render_tool_calls(message["tool_calls"])
                 message["tool_calls_str"] = tool_calls_str
-                if "content" in message and message["content"] is None:
+                # Tool-call turns commonly omit ``content`` entirely (OpenAI
+                # shape) or set it to ``None``; normalize both to "".
+                if message.get("content") is None:
                     message["content"] = ""
                 preprocessed_messages.append(message)
             elif message["role"] == "tool" and "content" in message:
@@ -163,19 +172,23 @@ class Renderer:
         skills_str = self._format_skills(skills)
 
         # Step 2 – encode each conversation turn to text tokens
-        elements, roles = self._encode_turns(
+        elements, roles, element_token_ids = self._encode_turns(
             work_messages, tools_raw, tools_block, skills_str, insert_tools_idx
         )
 
         # Step 3 – append generation prefix if needed
         if add_generation_prompt:
             self._maybe_add_generation_prompt(elements, roles)
+            # Any appended generation-prompt element carries no generated ids.
+            element_token_ids += [None] * (len(elements) - len(element_token_ids))
 
         # Concatenate the prompt
         prompt = "".join(elements)
 
-        elements, mask_flags = self._postprocess_elements(elements, roles)
-        return prompt, elements, mask_flags
+        elements, mask_flags, element_token_ids = self._postprocess_elements(
+            elements, roles, element_token_ids
+        )
+        return prompt, elements, mask_flags, element_token_ids
 
     def _insert_tools(self, messages: List[Dict], tools):
         """Clone *messages* and compute where (and how) the tool catalogue
@@ -268,11 +281,17 @@ class Renderer:
 
         elements: List[str] = []
         roles: List[Role] = []
+        # Parallel to ``elements``: the model-generated token ids for an
+        # assistant *content* element (splice source), or None for every other
+        # element. Kept index-aligned with ``elements`` even when system/global
+        # prefixes are inserted, because we append to both lists together.
+        element_token_ids: List = []
 
         # Global prefix comes first (rarely used but must respect ordering)
         if self.template.global_policy and self.template.global_policy.prefix:
             elements.append(self.template.global_policy.prefix)
             roles.append(Role.SYSTEM)
+            element_token_ids.append(None)
 
         for i, message in enumerate(work_messages):
             current_role = self._detect_role(message["role"])
@@ -287,6 +306,7 @@ class Renderer:
                     )
                     elements.append(system_message)
                     roles.append(Role.SYSTEM)
+                    element_token_ids.append(None)
                 # Whether inserted or not, we skip further handling of this
                 # message because it's the (optional) system turn itself.
                 continue
@@ -297,6 +317,7 @@ class Renderer:
                     )
                     elements.append(system_message)
                     roles.append(Role.SYSTEM)
+                    element_token_ids.append(None)
                 # Do *not* `continue` – we still need to encode this first message.
 
             # --------------------------------------------------------------
@@ -311,6 +332,7 @@ class Renderer:
                     user_message = self._encode_user_message(message["content"])
                 elements.append(user_message)
                 roles.append(Role.USER)
+                element_token_ids.append(None)
 
             elif current_role == Role.ASSISTANT:
                 assistant_message = self._encode_assistant_message(
@@ -321,15 +343,19 @@ class Renderer:
                 )
                 elements.append(assistant_message)
                 roles.append(Role.ASSISTANT)
+                # Carry the generated ids (if any) so _postprocess_elements can
+                # attach them to the assistant *content* sub-element after split.
+                element_token_ids.append(message.get("token_ids"))
 
             elif current_role == Role.TOOL:
                 tool_message = self._encode_tool_message(message["content"])
                 elements.append(tool_message)
                 roles.append(Role.TOOL)
+                element_token_ids.append(None)
             else:
                 raise ValueError(f"Invalid role: {message['role']}")
 
-        return elements, roles
+        return elements, roles, element_token_ids
 
     def _maybe_add_generation_prompt(self, elements: List[str], roles: List[Role]):
         """Append the generation prefix so the model knows to continue
@@ -545,7 +571,72 @@ class Renderer:
                 break
         return prefix, content, suffix
 
-    def _postprocess_elements(self, elements: List[str], roles) -> List[str]:
+    def _assistant_glue(self):
+        """The template's structural glue around assistant-generated content,
+        as ``(leading, trailing)`` strings, discovered by a one-time sentinel
+        probe -- never from any generated ``token_ids``.
+
+        ``leading`` is text the template places *before* the model output inside
+        the trained content span (e.g. the base Qwen template fuses a role
+        separator ``"\\n"`` there); ``trailing`` is the content span's tail
+        *starting at the turn terminator* (e.g. ``"<|im_end|>"``). The encoder
+        prepends ``leading``, uses the generated ids verbatim, and appends
+        ``trailing`` minus its leading terminator (matched by id). Cached on the
+        template so the (pure string) probe runs once.
+        """
+        # get_template() hands out a fresh copy() of a base template per call, so
+        # an instance attribute would be re-probed every conversation. Key a
+        # module-level cache by the fields that determine the glue instead, so
+        # every copy (and every render) shares one probe.
+        key = (
+            self.template.name,
+            self.template.assistant_template,
+            tuple(self.template.stop_words or ()),
+        )
+        cached = _ASSISTANT_GLUE_CACHE.get(key)
+        if cached is not None:
+            return cached
+        sentinel = "chatbricks_content_sentinel"
+        leading, trailing = "", ""
+        try:
+            asst = self._encode_assistant_message(sentinel)
+            _prefix, content, _suffix = self._split_assistant_message(asst)
+            idx = content.find(sentinel)
+            if idx != -1:
+                leading = content[:idx]
+                trailing = content[idx + len(sentinel):]
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(
+                "[chat-bricks] assistant-glue probe failed for %s (%s); "
+                "token_ids splice will add no surrounding glue.",
+                self.template.name,
+                e,
+            )
+        _ASSISTANT_GLUE_CACHE[key] = (leading, trailing)
+        return leading, trailing
+
+    def _spliced_prefix(self, split_prefix: str) -> str:
+        """The masked text that precedes spliced ``token_ids`` for an assistant turn.
+
+        Sampled ids are, by definition, the model's continuation of the generation
+        prompt it was given, so the prefix of a spliced turn is that generation
+        prompt -- not the assistant-template prefix, which some templates define
+        differently (e.g. the base Qwen template fuses the role separator into the
+        content slot). Renderers whose ``_split_assistant_message`` already returns a
+        generation-aware prefix override this to keep it.
+        """
+        generation_prompt, _prefix = self._encode_generation_prompt()
+        return generation_prompt
+
+    def _postprocess_elements(
+        self, elements: List[str], roles, element_token_ids=None
+    ) -> List[str]:
+        # ``element_token_ids`` is parallel to ``elements``: the generated ids
+        # for an assistant turn (splice source) or None. When absent, behave
+        # exactly as before (all None → pure text encoding downstream).
+        if element_token_ids is None:
+            element_token_ids = [None] * len(elements)
+
         # Flag non-assistant messages
         new_elements = []
         mask_flags = []
@@ -562,6 +653,10 @@ class Renderer:
         # merge non-assistant messages and handle the generation prefix and suffixes
         merged_elements = []
         merged_mask_flags = []
+        # Parallel to ``merged_elements``: only an assistant *content* sub-element
+        # carries the turn's generated ids; every prefix/suffix/merged-context
+        # element carries None (deterministic template glue, encoded as text).
+        merged_element_token_ids = []
 
         for i, (element, mask_flag) in enumerate(zip(new_elements, mask_flags)):
             if i == 0:
@@ -573,10 +668,21 @@ class Renderer:
                     # Both previous and current elements are assistant messages
                     if not mask_flag:
                         prefix, content, suffix = self._split_assistant_message(element)
+                        _ids = element_token_ids[i]
+                        if _ids is not None:
+                            # Spliced turn: the sampled ids continue the generation
+                            # prompt the model was given, so that prompt is the masked
+                            # prefix and nothing sits between it and the ids.
+                            prefix = self._spliced_prefix(prefix)
                         merged_elements.append(prefix)
                         merged_mask_flags.append(True)
+                        merged_element_token_ids.append(None)
                         merged_elements.append(content)
                         merged_mask_flags.append(False)
+                        _lead, _trail = self._assistant_glue()
+                        merged_element_token_ids.append(
+                            (_ids, "", _trail) if _ids is not None else None
+                        )
                         prev_element = suffix
                         prev_mask_flag = True  # We need to mask the suffix
                     # Both previous and current elements are non-assistant messages
@@ -587,12 +693,20 @@ class Renderer:
                     # Previous element is not assistant message, but the current one is
                     if not mask_flag:
                         prefix, content, suffix = self._split_assistant_message(element)
+                        _ids = element_token_ids[i]
+                        if _ids is not None:
+                            prefix = self._spliced_prefix(prefix)  # see above
                         prev_element += prefix
                         prev_mask_flag = True
                         merged_elements.append(prev_element)
                         merged_mask_flags.append(prev_mask_flag)
+                        merged_element_token_ids.append(None)
                         merged_elements.append(content)
                         merged_mask_flags.append(False)
+                        _lead, _trail = self._assistant_glue()
+                        merged_element_token_ids.append(
+                            (_ids, "", _trail) if _ids is not None else None
+                        )
                         prev_element = suffix
                         prev_mask_flag = True
                     # Previous element is assistant message, but the current one is not
@@ -602,7 +716,8 @@ class Renderer:
         if prev_element != "":
             merged_elements.append(prev_element)
             merged_mask_flags.append(prev_mask_flag)
-        return merged_elements, merged_mask_flags
+            merged_element_token_ids.append(None)
+        return merged_elements, merged_mask_flags, merged_element_token_ids
 
 
 class Qwen3Renderer(Renderer):
@@ -656,7 +771,7 @@ class Qwen3Renderer(Renderer):
             work_messages = self._reformat_last_assistant_think_content(work_messages)
 
         # Step 3 – encode each conversation turn to text tokens
-        elements, roles = self._encode_turns(work_messages, tools_raw, tools_block, skills_str, insert_tools_idx)
+        elements, roles, element_token_ids = self._encode_turns(work_messages, tools_raw, tools_block, skills_str, insert_tools_idx)
 
         # Step 4 – handle special generation prompt logic for Qwen3
         if add_generation_prompt:
@@ -666,11 +781,16 @@ class Qwen3Renderer(Renderer):
         elif work_messages and work_messages[-1].get("role") == "assistant":
             # Add empty think tokens to the last assistant message if it doesn't already have think tags
             self._add_empty_think_to_last_assistant(elements, roles, work_messages)
+        # The helpers above may append/rewrite elements; keep the parallel
+        # token-ids list aligned (appended glue carries no generated ids).
+        element_token_ids += [None] * (len(elements) - len(element_token_ids))
 
         # Concatenate the prompt
         prompt = "".join(elements)
-        elements, mask_flags = self._postprocess_elements(elements, roles)
-        return prompt, elements, mask_flags
+        elements, mask_flags, element_token_ids = self._postprocess_elements(
+            elements, roles, element_token_ids
+        )
+        return prompt, elements, mask_flags, element_token_ids
 
     def _clean_think_content(self, messages: List[Dict]) -> List[Dict]:
         """Remove all think content (<think>...</think>) from assistant messages and reformat existing think content."""
@@ -700,6 +820,11 @@ class Qwen3Renderer(Renderer):
                     raise ValueError(f"Invalid content type: {type(content)}")
 
                 cleaned_message["content"] = cleaned_content
+                # This turn's content was rewritten (think stripped), so the
+                # generated token_ids no longer correspond to what will be
+                # rendered. Drop them: the turn must be text-encoded from the
+                # rewritten content, not spliced verbatim.
+                cleaned_message.pop("token_ids", None)
                 cleaned_messages.append(cleaned_message)
             else:
                 cleaned_messages.append(message)
@@ -833,6 +958,12 @@ class Qwen3Renderer(Renderer):
                     )
                     break
 
+    def _spliced_prefix(self, split_prefix: str) -> str:
+        # ``_split_assistant_message`` below already returns the generation prefix
+        # (plus the empty-think block for a thinking-off turn), i.e. exactly what the
+        # model was given before sampling.
+        return split_prefix
+
     def _split_assistant_message(self, assistant_message: str) -> List[str]:
         # Split the assistant message into generation prefix, content, and generation suffix
         generation_prefix, prefix = self._encode_generation_prompt()
@@ -860,6 +991,59 @@ class Qwen3Renderer(Renderer):
 class HFRenderer(Renderer):
     def __init__(self, template: "HFTemplate"):
         super().__init__(template)
+        self._assistant_glue_cache = None
+        self._warned_history_rewrite = False
+
+    def _assistant_glue(self):
+        """``(leading, trailing)`` structural glue around assistant content for
+        this HF chat template, discovered by a one-time sentinel probe.
+
+        Render a throwaway assistant turn with a sentinel body, isolate the
+        assistant content element (the diff after the generation prompt, using
+        the same prefix-diff HFRenderer uses elsewhere), and read off the text
+        before the sentinel (leading) and from the sentinel onward (trailing,
+        which starts at the turn terminator). Never references any generated
+        token_ids; hardcodes no terminator string. Cached (one per HFTemplate).
+        """
+        if self._assistant_glue_cache is not None:
+            return self._assistant_glue_cache
+        # get_template() rebuilds an HFTemplate (and this renderer) per batch;
+        # the module-level cache keyed by model name keeps the probe to once
+        # per process instead of once per batch.
+        key = ("hf", self.template.name)
+        cached = _ASSISTANT_GLUE_CACHE.get(key)
+        if cached is not None:
+            self._assistant_glue_cache = cached
+            return cached
+        sentinel = "chatbricks_content_sentinel"
+        leading, trailing = "", ""
+        try:
+            probe = [
+                {"role": "user", "content": "probe"},
+                {"role": "assistant", "content": sentinel},
+            ]
+            with_asst = self.template.tokenizer.apply_chat_template(
+                probe, tokenize=False, add_generation_prompt=False
+            )
+            gen = self.template.tokenizer.apply_chat_template(
+                probe[:1], tokenize=False, add_generation_prompt=True
+            )
+            content_elem = with_asst[self._find_prefix_length(gen, with_asst):]
+            idx = content_elem.find(sentinel)
+            if idx != -1:
+                leading = content_elem[:idx]
+                trailing = content_elem[idx + len(sentinel):]
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(
+                "[chat-bricks] assistant-glue probe failed for %s (%s); "
+                "token_ids splice will add no surrounding glue.",
+                self.template.name,
+                e,
+            )
+        self._assistant_glue_cache = (leading, trailing)
+        _ASSISTANT_GLUE_CACHE[key] = (leading, trailing)
+        return leading, trailing
+
 
     def _find_prefix_length(self, text1: str, text2: str) -> int:
         """Find the length of the longest common prefix between two strings."""
@@ -910,10 +1094,60 @@ class HFRenderer(Renderer):
         # If prev_has_gen_prompt, prev_prompt ends with gen prompt, so we get content after it
         # Otherwise, we get the full new turn content
         prefix_len = self._find_prefix_length(prev_prompt, current_prompt)
-        new_element = current_prompt[prefix_len:]
-
         is_assistant = messages[turn_idx].get("role") == "assistant"
+        if prefix_len < len(prev_prompt) and not is_assistant:
+            # The template rewrote history that was already emitted (Qwen3-style
+            # templates drop the reasoning of earlier assistant turns once a later
+            # user query appears). A plain diff would then re-emit part of the
+            # earlier turn inside this element. Isolate this turn's own text
+            # instead; the previously emitted elements stay as they were (spliced
+            # ids are unaffected; text-path assistant turns keep the reasoning the
+            # model actually produced).
+            new_element = self._render_turn_delta_by_repeat(
+                messages, turn_idx, current_prompt, tools, **kwargs
+            )
+            if not self._warned_history_rewrite:
+                self._warned_history_rewrite = True
+                logger.warning(
+                    "[chat-bricks] template %s rewrote earlier turns when message %d "
+                    "(%s) was appended; rendering that turn by isolation. Earlier "
+                    "assistant elements keep their originally rendered text.",
+                    self.template.name, turn_idx, messages[turn_idx].get("role"),
+                )
+        else:
+            new_element = current_prompt[prefix_len:]
         return current_prompt, new_element, is_assistant
+
+    def _render_turn_delta_by_repeat(
+        self, messages, turn_idx, current_prompt, tools=None, **kwargs
+    ) -> str:
+        """This turn's rendered text, isolated by rendering the turn twice.
+
+        With the same message appended once more, both renders share the same
+        history (the duplicate is what moves any "last query" bookkeeping), so the
+        second copy's delta is exactly the turn's own rendering, which must also be
+        the tail of ``current_prompt``.
+        """
+        once = messages[: turn_idx + 1]
+        twice = once + [messages[turn_idx]]
+        rendered_twice = self.template.tokenizer.apply_chat_template(
+            twice, tokenize=False, tools=tools, add_generation_prompt=False, **kwargs
+        )
+        role = messages[turn_idx].get("role")
+        if not rendered_twice.startswith(current_prompt):
+            raise ValueError(
+                f"[chat-bricks] cannot isolate turn {turn_idx} ({role}) for template "
+                f"{self.template.name}: repeating the message changed the rendering of "
+                "earlier turns."
+            )
+        delta = rendered_twice[len(current_prompt):]
+        if not delta or not current_prompt.endswith(delta):
+            raise ValueError(
+                f"[chat-bricks] cannot isolate turn {turn_idx} ({role}) for template "
+                f"{self.template.name}: the repeated message does not render as a suffix "
+                "of the conversation."
+            )
+        return delta
 
     def _add_generation_prompt(
         self,
@@ -977,10 +1211,14 @@ class HFRenderer(Renderer):
                 prompt,
                 [prompt],
                 [True],
+                [None],
             )  # Generation prompt or empty prompt is masked
 
         elements: List[str] = []
         mask_flags: List[bool] = []
+        # Parallel to ``elements``: generated ids for an assistant content
+        # element (splice source), None for every non-assistant / glue element.
+        element_token_ids: List = []
         prev_prompt = ""
         # prev_has_gen_prompt = False
 
@@ -1022,6 +1260,22 @@ class HFRenderer(Renderer):
                 mask_flags.append(
                     not turn_is_assistant
                 )  # True for non-assistant, False for assistant
+                # Attach the generated ids only to an assistant content element,
+                # paired with the template's structural glue (leading text +
+                # trailing tail from the terminator) so the encoder can stitch by
+                # token id without inspecting the (possibly re-serialized) text.
+                _ids = messages[i].get("token_ids") if turn_is_assistant else None
+                if _ids is not None:
+                    # The generation prompt was emitted as its own masked element right
+                    # before this turn, and the sampled ids continue it verbatim, so no
+                    # leading glue may be inserted. (The sentinel probe's ``leading`` is
+                    # mode-dependent -- for a thinking template it is the empty-think
+                    # closer -- and was wrong for a thinking-on sample.) Only the
+                    # post-terminator glue is taken from the probe.
+                    _lead, _trail = self._assistant_glue()
+                    element_token_ids.append((_ids, "", _trail))
+                else:
+                    element_token_ids.append(None)
 
             # If next turn is assistant, add generation prompt
             if next_is_assistant:
@@ -1031,6 +1285,7 @@ class HFRenderer(Renderer):
                 if gen_element:
                     elements.append(gen_element)
                     mask_flags.append(True)  # Generation prompt is masked
+                    element_token_ids.append(None)
                 prev_prompt = gen_prompt
                 # prev_has_gen_prompt = True
             else:
@@ -1051,6 +1306,7 @@ class HFRenderer(Renderer):
             if gen_element:
                 elements.append(gen_element)
                 mask_flags.append(True)
+                element_token_ids.append(None)
             final_prompt = gen_prompt
         else:
             # Render final prompt with all messages and tools to ensure tools are included
@@ -1062,4 +1318,4 @@ class HFRenderer(Renderer):
                 **kwargs,
             )
 
-        return final_prompt, elements, mask_flags
+        return final_prompt, elements, mask_flags, element_token_ids

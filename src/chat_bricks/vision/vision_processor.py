@@ -19,7 +19,11 @@ from typing import (TYPE_CHECKING, Any, BinaryIO, Dict, List, Literal,
 import numpy as np
 from PIL import Image
 from PIL.Image import Image as ImageObject
-from transformers.image_utils import get_image_size, to_numpy_array
+
+# NOTE: ``transformers.image_utils`` (pulls transformers -> torch, ~5s) is imported
+# lazily inside the methods that use it. This module is imported at chat_bricks
+# load time (builtin templates register a vision processor), so a top-level
+# transformers import would make every ``import chat_bricks`` pay for torch.
 
 if TYPE_CHECKING:
     import torch
@@ -501,6 +505,8 @@ class PatchBasedProcessor(VisionProcessor):
                 return max(1, num_image_tokens)
 
             # Fallback to patch-based calculation
+            from transformers.image_utils import get_image_size, to_numpy_array
+
             height, width = get_image_size(
                 to_numpy_array(image_data["pixel_values"][0])
             )
@@ -524,6 +530,8 @@ class PatchBasedProcessor(VisionProcessor):
             video_tensor = video_data["pixel_values"][0]
             if len(video_tensor.shape) > 3:  # Has frame dimension
                 num_frames = video_tensor.shape[0]
+                from transformers.image_utils import get_image_size, to_numpy_array
+
                 height, width = get_image_size(to_numpy_array(video_tensor[0]))
                 frame_seqlen = (height // processor.patch_size) * (
                     width // processor.patch_size
@@ -712,6 +720,8 @@ class LlavaProcessor(PatchBasedProcessor):
     def calculate_image_tokens(self, image_data: Dict[str, Any], processor: Any) -> int:
         """LLaVA specific token calculation"""
         if "pixel_values" in image_data:
+            from transformers.image_utils import get_image_size, to_numpy_array
+
             height, width = get_image_size(
                 to_numpy_array(image_data["pixel_values"][0])
             )

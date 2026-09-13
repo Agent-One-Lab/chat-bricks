@@ -1,11 +1,17 @@
-import logging
-from typing import Any, Dict, List, Union
+# Defer annotation evaluation so the type-only ``PreTrainedTokenizer`` import
+# (which pulls transformers -> torch, ~5s) stays under TYPE_CHECKING and never
+# loads on a bare ``import chat_bricks``.
+from __future__ import annotations
 
-from transformers import PreTrainedTokenizer
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from .registry import get_template
 from .templates import HFTemplate, Template
 from .utils import is_vision_lm
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +116,22 @@ class Chat:
         for message in messages:
             hf_message = {
                 "role": message[role_label],
-                "content": message[content_label],
+                # Tool-call assistant turns often omit content entirely; treat a
+                # missing content field the same as an empty one.
+                "content": message.get(content_label, ""),
             }
             if "tool_calls" in message:
                 hf_message["tool_calls"] = message["tool_calls"]
+            # Reasoning must survive normalization: HF chat templates (e.g.
+            # Qwen3) read ``reasoning_content`` to render <think> blocks, and
+            # dropping it here silently trains empty thinking.
+            if "reasoning_content" in message:
+                hf_message["reasoning_content"] = message["reasoning_content"]
+            # Generated token ids must survive normalization too: tokenization
+            # splices them for assistant turns to avoid retokenization drift.
+            # Dropping them here would silently fall back to re-encoding text.
+            if "token_ids" in message:
+                hf_message["token_ids"] = message["token_ids"]
             hf_messages.append(hf_message)
 
         for message in hf_messages:
@@ -140,7 +158,7 @@ class Chat:
         self.flags["add_generation_prompt"] = add_generation_prompt
         tools = tools or self.tools
         skills = skills if skills is not None else self.skills
-        prompt, _, _ = self.template.render(
+        prompt, _, _, _ = self.template.render(
             messages=self.messages,
             tools=tools,
             skills=skills,
@@ -205,11 +223,17 @@ class Chat:
                 - multi_modal_inputs
         """
         if tokenizer is None:
-            if self.tokenizer is None:
-                raise ValueError(
-                    "Tokenizer is not set. Set it when initializing the chat or pass it as an argument."
-                )
             tokenizer = self.tokenizer
+        if tokenizer is None:
+            # HF templates load their own tokenizer, and HFTemplate.encode uses
+            # it regardless of what is passed here; expose it rather than raising
+            # when the caller supplied none. Base templates carry no tokenizer,
+            # so for them this stays None and we raise below as before.
+            tokenizer = getattr(self.template, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError(
+                "Tokenizer is not set. Set it when initializing the chat or pass it as an argument."
+            )
 
         if tools is None:
             tools = self.tools

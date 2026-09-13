@@ -37,7 +37,7 @@ SINGLE_TURN_MESSAGES = [
 def test_render_mask_flags_only_last_assistant_trainable(template_name):
     """With train_on_last_turn_only=True, only the last element that is assistant content has mask_flag=False."""
     template = get_template(template_name)
-    prompt, elements, mask_flags = template.render(
+    prompt, elements, mask_flags, _ = template.render(
         MULTI_TURN_MESSAGES,
         add_generation_prompt=False,
         train_on_last_turn_only=True,
@@ -57,7 +57,7 @@ def test_render_mask_flags_only_last_assistant_trainable(template_name):
 def test_render_mask_flags_all_assistant_trainable_when_false(template_name):
     """With train_on_last_turn_only=False, every assistant element has mask_flag=False."""
     template = get_template(template_name)
-    _, elements, mask_flags = template.render(
+    _, elements, mask_flags, _ = template.render(
         MULTI_TURN_MESSAGES,
         add_generation_prompt=False,
         train_on_last_turn_only=False,

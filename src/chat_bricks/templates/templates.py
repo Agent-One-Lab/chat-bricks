@@ -1,14 +1,21 @@
+# Defer annotation evaluation so the type-only ``PreTrainedTokenizer`` import
+# stays under TYPE_CHECKING; ``AutoTokenizer`` is imported lazily where used.
+# Both pull transformers -> torch (~5s), which a bare ``import chat_bricks`` must
+# not pay for.
+from __future__ import annotations
+
 import dataclasses
 import logging
 from collections import defaultdict
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple, Union
-
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 from ..policies import AssistantPolicy, GlobalPolicy, SkillPolicy, SystemPolicy, ToolPolicy
 from .jinja_generator import JinjaGenerator
 from .renderer import Qwen3Renderer, Renderer
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +30,83 @@ def _require_torch():
             "chat-bricks tensor outputs (return_tensors='pt') require torch. "
             "Install with: pip install 'chat-bricks[train]'"
         ) from e
+
+
+def _glue_ids(tokenizer, text: str):
+    """Tokenize a constant template glue string, memoized per tokenizer.
+
+    Glue strings (``leading`` / ``trailing``) are template constants, so their
+    ids are the same for every assistant turn of every conversation. Under
+    massive encoding, re-tokenizing them per turn is pure waste; memoize on the
+    tokenizer object (ties cache lifetime to the tokenizer, so two tokenizers
+    can never collide the way an ``id()``-keyed dict could). Falls back to a
+    plain encode if the tokenizer refuses attribute assignment.
+    """
+    if not text:
+        return []
+    cache = getattr(tokenizer, "_chat_bricks_glue_ids", None)
+    if cache is None:
+        cache = {}
+        try:
+            tokenizer._chat_bricks_glue_ids = cache
+        except Exception:  # pragma: no cover - exotic tokenizer objects
+            return tokenizer.encode(text, add_special_tokens=False)
+    ids = cache.get(text)
+    if ids is None:
+        ids = tokenizer.encode(text, add_special_tokens=False)
+        cache[text] = ids
+    return ids
+
+
+def _encode_element_with_token_ids(tokenizer, element: str, entry):
+    """Token ids for one rendered element, splicing generated ids when present.
+
+    ``entry`` is either None or a ``(token_ids, leading, trailing)`` triple
+    produced by the renderer for an assistant *content* element:
+
+    * ``token_ids`` – the exact ids the model generated for this turn (from vLLM
+      ``return_token_ids``), used **verbatim**. This eliminates retokenization
+      "token drift" (e.g. ``<think>`` sampled as [27, 26865, 29] but canonically
+      re-encoded as [13708, 766, 29]) and, crucially, preserves native tool-call
+      turns whose structured re-serialization would otherwise differ from what
+      was sampled. We never decode ``token_ids`` and never compare it to the
+      rendered ``element`` text — so a re-serialized element can't cause drift or
+      a fallback.
+
+    * ``leading`` / ``trailing`` – the template's structural glue that surrounds
+      the model output inside this content element, discovered by a one-time
+      sentinel probe of the template (never from ``token_ids``). ``leading`` is
+      any text before the generated content (e.g. a role-separator ``"\\n"`` that
+      the base Qwen template fuses into the content span); ``trailing`` is the
+      tail *starting at the turn terminator* (e.g. ``"<|im_end|>"`` for the base
+      renderer, ``"<|im_end|>\\n"`` for HF). The terminator is stripped by **id**:
+      if the generated ids already end with ``trailing``'s first token we append
+      only the post-terminator glue, otherwise (a max-length truncation with no
+      eos) we append the whole trailing so the turn is still terminated. No
+      terminator *string* is ever hardcoded — it is identified purely by id.
+
+    When ``entry`` is None (every non-assistant / glue element, and assistant
+    turns without generated ids) this is exactly the old behaviour:
+    ``tokenizer.encode(element, add_special_tokens=False)``.
+    """
+    if entry is None:
+        return tokenizer.encode(element, add_special_tokens=False)
+
+    token_ids, leading, trailing = entry
+    token_ids = list(token_ids)
+    # Glue ids are memoized per tokenizer (template constants): no tokenizer
+    # call per turn. Concatenation below always builds a fresh list, so the
+    # cached lists are never mutated.
+    cur = _glue_ids(tokenizer, leading) + token_ids
+    trailing_ids = _glue_ids(tokenizer, trailing)
+    if trailing_ids:
+        if token_ids and token_ids[-1] == trailing_ids[0]:
+            # Generated ids already carry the terminator -> append glue only.
+            cur = cur + trailing_ids[1:]
+        else:
+            # Truncated generation (no terminator) -> append terminator + glue.
+            cur = cur + trailing_ids
+    return cur
 
 
 @dataclasses.dataclass
@@ -203,7 +287,7 @@ class Template:
             elements: The list of string *elements* that compose the prompt
             mask_flags: The list of mask flags for the elements
         """
-        prompt, elements, mask_flags = Renderer(self).render(
+        prompt, elements, mask_flags, element_token_ids = Renderer(self).render(
             messages, tools, skills, add_generation_prompt
         )
 
@@ -220,7 +304,7 @@ class Template:
                 for i in range(0, last_one_idx):
                     mask_flags[i] = True
 
-        return prompt, elements, mask_flags
+        return prompt, elements, mask_flags, element_token_ids
 
     def encode(
         self,
@@ -290,7 +374,7 @@ class Template:
     ) -> str:
         logger.debug(f"[Template] Encoding standard for template: {self.name}")
         """Standard encoding without vision support"""
-        prompt, elements, mask_flags = self.render(
+        prompt, elements, mask_flags, element_token_ids = self.render(
             messages, tools=tools, skills=skills, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
         input_ids = []
@@ -307,8 +391,8 @@ class Template:
                 labels.append(-100)
                 action_mask.append(0)
 
-        for element, mask_flag in zip(elements, mask_flags):
-            cur_input_ids = tokenizer.encode(element, add_special_tokens=False)
+        for element, mask_flag, entry in zip(elements, mask_flags, element_token_ids):
+            cur_input_ids = _encode_element_with_token_ids(tokenizer, element, entry)
             input_ids.extend(cur_input_ids)
             attention_mask.extend([1] * len(cur_input_ids))
             if mask_flag:
@@ -354,8 +438,10 @@ class Template:
                 f"No vision processor registered for template: {self.name}"
             )
 
-        # Get base prompt and mask information
-        prompt, elements, mask_flags = self.render(
+        # Get base prompt and mask information. The vision alignment path does
+        # not splice generated ids (no token_ids source for image turns yet), so
+        # the 4th render output is intentionally ignored here.
+        prompt, elements, mask_flags, _ = self.render(
             messages, tools=tools, skills=skills, add_generation_prompt=add_generation_prompt, train_on_last_turn_only=train_on_last_turn_only, **kwargs
         )
 
@@ -437,7 +523,7 @@ class Template:
     ):
         from termcolor import colored
 
-        prompt, elements, mask_flags = self.render(
+        prompt, elements, mask_flags, _ = self.render(
             messages, add_generation_prompt=add_generation_prompt, tools=tools, skills=skills, **kwargs
         )
 
@@ -526,6 +612,8 @@ class HFTemplate(Template):
         super().__init__(name=name)
 
         if not tokenizer:
+            from transformers import AutoTokenizer  # lazy: pulls transformers -> torch
+
             self.tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
         else:
             self.tokenizer = tokenizer
@@ -595,8 +683,9 @@ class HFTemplate(Template):
         # Use self.tokenizer if provided tokenizer is different (for compatibility)
         tokenizer_to_use = self.tokenizer
 
-        # Reuse render() to get elements and mask_flags (same as base Template)
-        prompt, elements, mask_flags = self.render(
+        # Reuse render() to get elements, mask_flags and per-element generated
+        # ids (same pattern as base Template)
+        prompt, elements, mask_flags, element_token_ids = self.render(
             messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
         )
 
@@ -613,9 +702,10 @@ class HFTemplate(Template):
                 labels.append(-100)
                 action_mask.append(0)
 
-        # Tokenize each element separately (same as base Template)
-        for element, mask_flag in zip(elements, mask_flags):
-            cur_input_ids = tokenizer_to_use.encode(element, add_special_tokens=False)
+        # Tokenize each element separately (same as base Template), splicing
+        # generated ids for assistant content elements when present.
+        for element, mask_flag, entry in zip(elements, mask_flags, element_token_ids):
+            cur_input_ids = _encode_element_with_token_ids(tokenizer_to_use, element, entry)
             input_ids.extend(cur_input_ids)
             attention_mask.extend([1] * len(cur_input_ids))
             if mask_flag:

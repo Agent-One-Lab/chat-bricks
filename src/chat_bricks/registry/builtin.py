@@ -1,5 +1,6 @@
 from ..constants import ToolPlacement
-from ..policies import (AssistantPolicy, GlobalPolicy, JsonCompactFormatter,
+from ..policies import (AssistantPolicy, DeepSeekV4ToolCallContentProcessor,
+                        GlobalPolicy, JsonCompactFormatter, JsonFormatter,
                         JsonFormatterNoBreakLine, JsonIndentedFormatter,
                         KimiK2ToolCallContentProcessor, Llama32DateProcessor,
                         Qwen25AssistantContentProcessor, SystemPolicy,
@@ -379,6 +380,89 @@ register_template(
         system_policy=SystemPolicy(
             use_system=True,
             use_system_without_system_message=False,
+        ),
+    )
+)
+
+# DeepSeek-V4 (`deepseek-ai/DeepSeek-V4-Pro` / `-Flash`) — DSML tool calling +
+# a skills section. DeepSeek-V4 ships a *Python* encoder (`encoding/encoding_dsv4.py`)
+# rather than a Jinja `chat_template`, so this brick is verified against that
+# reference encoder running in **chat mode** (`thinking_mode="chat"`), the mode
+# whose static structure chat-bricks models:
+#   - BOS prefix `<｜begin▁of▁sentence｜>`; system content sits at the very front.
+#   - Tool catalogue lands in the system block as `\n\n## Tools\n\n...`, with each
+#     tool's `function` dict dumped to one-line JSON (one per line). Extraction of
+#     the `function` field is `ToolMainContentProcessor`; the spaced one-line JSON
+#     is the default `JsonFormatter`.
+#   - Tool CALLS use DSML: a `<｜DSML｜tool_calls>` block wrapping one
+#     `<｜DSML｜invoke name="...">` per call, each argument its own
+#     `<｜DSML｜parameter name="..." string="true|false">` element. This needs the
+#     custom `DeepSeekV4ToolCallContentProcessor` — args are NOT a single JSON blob.
+#   - The block is prefixed with `\n\n`, so `tool_calls_template` opens with it and
+#     `single_tool_call_template` leads each invoke with `\n` to separate parallel
+#     calls (matching the reference's `"\n".join(...)`).
+#   - Tool results merge into a user turn as `<｜User｜><tool_result>...</tool_result>`.
+#   - Chat mode closes thinking immediately: assistant turns / the generation prompt
+#     carry `</think>` (no reasoning block), exactly like `deepseek-v3.1`.
+# The `## Skills` section is a chat-bricks addition in V4's own markdown style
+# (V4 has no native skills concept); it mirrors the tools section so a `load_skill`
+# tool catalogue can be advertised alongside the function tools.
+register_template(
+    Template(
+        name="deepseek-v4",
+        system_template="{system_message}{tools}{skills}",
+        tools_template=(
+            "\n\n## Tools\n\n"
+            "You have access to a set of tools to help answer the user's question. "
+            'You can invoke tools by writing a "<｜DSML｜tool_calls>" block like the following:\n\n'
+            "<｜DSML｜tool_calls>\n"
+            '<｜DSML｜invoke name="$TOOL_NAME">\n'
+            '<｜DSML｜parameter name="$PARAMETER_NAME" string="true|false">$PARAMETER_VALUE</｜DSML｜parameter>\n'
+            "...\n"
+            "</｜DSML｜invoke>\n"
+            '<｜DSML｜invoke name="$TOOL_NAME2">\n'
+            "...\n"
+            "</｜DSML｜invoke>\n"
+            "</｜DSML｜tool_calls>\n\n"
+            "String parameters should be specified as is and set `string=\"true\"`. "
+            "For all other types (numbers, booleans, arrays, objects), pass the value "
+            'in JSON format and set `string="false"`.\n\n'
+            "If thinking_mode is enabled (triggered by <think>), you MUST output your "
+            "complete reasoning inside <think>...</think> BEFORE any tool calls or final response.\n\n"
+            "Otherwise, output directly after </think> with tool calls or final response.\n\n"
+            "### Available Tool Schemas\n\n"
+            "{tools}\n\n"
+            "You MUST strictly follow the above defined tool name and parameter schemas "
+            "to invoke tool calls.\n"
+        ),
+        skills_template=(
+            "\n\n## Skills\n\n"
+            "You may also load one of the following skills via the load_skill tool. "
+            "Each skill bundles task-specific instructions and (optionally) scripts or "
+            "references that become available only after the skill is loaded.\n\n"
+            "### Available Skills\n\n"
+            "{skills}\n\n"
+            "Load a skill before relying on its capabilities.\n"
+        ),
+        single_skill_template="- {name}: {description}",
+        user_template="<｜User｜>{content}",
+        assistant_template="<｜Assistant｜></think>{content}{tool_calls}<｜end▁of▁sentence｜>",
+        generation_prompt="<｜Assistant｜></think>",
+        tool_calls_template="\n\n<｜DSML｜tool_calls>{tool_calls}\n</｜DSML｜tool_calls>",
+        single_tool_call_template="\n{tool_call}",
+        observations_template="<｜User｜>{observations}",
+        single_observation_template="<tool_result>{observation}</tool_result>",
+        stop_words=["<｜end▁of▁sentence｜>"],
+        global_policy=GlobalPolicy(prefix="<｜begin▁of▁sentence｜>"),
+        system_policy=SystemPolicy(
+            use_system=True,
+            use_system_without_system_message=False,
+        ),
+        tool_policy=ToolPolicy(
+            placement=ToolPlacement.SYSTEM,
+            content_processor=ToolMainContentProcessor(),
+            tool_call_content_processor=DeepSeekV4ToolCallContentProcessor(),
+            formatter=JsonFormatter(),
         ),
     )
 )

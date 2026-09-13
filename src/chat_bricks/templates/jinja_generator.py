@@ -122,19 +122,29 @@ class JinjaGenerator:
             else False
         )
 
+        # All templates that flow through the runtime `replace(...)` pipeline
+        # (rather than Python's `str.format`) need their `{{` / `}}` literal-
+        # brace escapes converted back to single `{` / `}` BEFORE going into a
+        # Jinja `set` literal — otherwise the doubled braces survive into the
+        # final rendered output. (Previously this was done ad hoc for
+        # tools/single_tool/skills; we now do it for every template in this
+        # section.)
+        def _unesc(s: str) -> str:
+            return s.replace("{{", "{").replace("}}", "}") if s else s
+
         header = [
             f"{{% set _user_pref  = {u_pref!r} %}}",
             f"{{% set _user_suff  = {u_suff!r} %}}",
             f"{{% set _assistant_pref  = {a_pref!r} %}}",
             f"{{% set _assistant_suff  = {a_suff!r} %}}",
-            f"{{% set _assistant_template = {self.template.assistant_template!r} %}}",
+            f"{{% set _assistant_template = {_unesc(self.template.assistant_template)!r} %}}",
             f"{{% set _tool_pref  = {t_pref!r} %}}",
             f"{{% set _tool_suff  = {t_suff!r} %}}",
             f"{{% set _image_token = {img_tok!r} %}}",
             f"{{% set _video_token = {vid_tok!r} %}}",
             f"{{% set _default_system = {default_system!r} %}}",
             f"{{% set _system_message = {self.template.system_message!r} %}}",
-            f"{{% set _system_template = {self.template.system_template!r} %}}",
+            f"{{% set _system_template = {_unesc(self.template.system_template)!r} %}}",
             f"{{% set _tool_placement = {self.template.tool_policy.placement.name!r} %}}",
             f"{{% set _supports_tool_calls = {supports_tool_calls_in_template} %}}",
             f"{{% set _uses_observations = {uses_observations} %}}",
@@ -142,7 +152,7 @@ class JinjaGenerator:
 
         if self.template.observations_template:
             header.append(
-                f"{{% set _observations_template = {self.template.observations_template!r} %}}"
+                f"{{% set _observations_template = {_unesc(self.template.observations_template)!r} %}}"
             )
         else:
             header.append("{% set _observations_template = '' %}")
@@ -150,13 +160,13 @@ class JinjaGenerator:
         # Add single_tool_call_template if it exists
         if self.template.single_tool_call_template:
             header.append(
-                f"{{% set _single_tool_call_template = {self.template.single_tool_call_template!r} %}}"
+                f"{{% set _single_tool_call_template = {_unesc(self.template.single_tool_call_template)!r} %}}"
             )
 
         # Add tool_calls_template if it exists
         if self.template.tool_calls_template:
             header.append(
-                f"{{% set _tool_calls_template = {self.template.tool_calls_template!r} %}}"
+                f"{{% set _tool_calls_template = {_unesc(self.template.tool_calls_template)!r} %}}"
             )
         else:
             header.append("{% set _tool_calls_template = None %}")
@@ -164,7 +174,7 @@ class JinjaGenerator:
         # Add single_observation_template if it exists
         if self.template.single_observation_template:
             header.append(
-                f"{{% set _single_observation_template = {self.template.single_observation_template!r} %}}"
+                f"{{% set _single_observation_template = {_unesc(self.template.single_observation_template)!r} %}}"
             )
 
         # Tools / skills section templates (new section-template pattern).
@@ -341,8 +351,11 @@ class JinjaGenerator:
         """
 
         # Build the inner tools text + wrap with tools_template (or leave empty).
+        # ``_fmt_tools`` is only emitted when the template supports tool calls (see
+        # ``_jinja_header``). Guard on it so a template that ignores tools does not crash
+        # when a caller still passes ``tools=[...]`` — it just yields an empty block.
         tools_block_setup = [
-            "{% if tools %}",
+            "{% if tools and _fmt_tools is defined %}",
             "{% set _formatted_tools = _fmt_tools(tools) %}",
             "{% if _tools_template is not none %}",
             "{% set _tools_block = _tools_template | replace('{tools}', _formatted_tools) %}",

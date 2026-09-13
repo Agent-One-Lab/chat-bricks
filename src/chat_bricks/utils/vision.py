@@ -6,7 +6,9 @@ from urllib.parse import urlparse
 
 import requests
 from PIL import Image
-from transformers import AutoConfig
+
+# NOTE: ``AutoConfig`` (transformers -> torch, ~5s) is imported lazily inside
+# ``is_vision_lm`` so a bare ``import chat_bricks`` doesn't pay for it.
 
 
 def open_image_from_any(src: str | Image.Image, *, timeout: int = 10) -> Image.Image:
@@ -318,6 +320,8 @@ def is_vision_lm(model_name: str) -> bool:
     """
     if model_name in _VISION_LM_CACHE:
         return _VISION_LM_CACHE[model_name]
+
+    from transformers import AutoConfig  # lazy: pulls transformers -> torch
 
     config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     result = is_vlm_by_config(config)
