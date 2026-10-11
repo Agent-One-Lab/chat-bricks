@@ -117,6 +117,10 @@ class Template:
         name: The name of this template
         system_template: The system template — may include ``{tools}`` and ``{skills}``
             placeholders which are filled with the rendered section blocks.
+        default_system_template: The system template used when no system message is
+            supplied (so the default ``system_message`` is rendered). Defaults to
+            ``system_template``; set it when the model formats the default system turn
+            differently from a user-supplied one.
         system_message: The default system message
         stop_words: The stop words where the model stops generating (usually EOS token)
         observations_template: Wraps the whole tool-response message (renamed from the old ``tool_template``).
@@ -139,6 +143,8 @@ class Template:
     # The template of the system prompt — fills ``{system_message}``, plus optional
     # ``{tools}`` / ``{skills}`` slots filled by the section templates below.
     system_template: str = "{system_message}"
+    # The system template for the default system message; ``None`` -> ``system_template``.
+    default_system_template: str = None
     # The system message
     system_message: str = ""
     # ----- Tool response (the message a "tool" role contributes) -----
@@ -383,8 +389,11 @@ class Template:
         action_mask = []
 
         if tokenizer.bos_token:
-            # If add_bos_token is not set, we assume to add bos token
-            # There is potential issue if the tokenizer has bos_token but do not add it by default
+            # BOS follows the tokenizer's ``add_bos_token``, which we expect to match
+            # ``apply_chat_template``: transformers>=5 sets it False when the chat
+            # template renders BOS itself. transformers<5 may leave it unset or True
+            # for such templates (e.g. Llama-3.x, DeepSeek-R1-Distill), which yields a
+            # duplicated BOS here.
             if getattr(tokenizer, "add_bos_token", True):
                 input_ids.append(tokenizer.bos_token_id)
                 attention_mask.append(1)
@@ -471,12 +480,19 @@ class Template:
         return is_vision_template(self.name)
 
     def get_vision_inputs(self, messages: List[Dict]):
+        """Collect the images referenced by ``messages``.
+
+        Content may be a plain string (or ``None``), which carries no images,
+        or a list of typed parts. Text-only messages yield no vision inputs.
+        """
         from ..utils.vision import open_image_from_any
 
         vision_inputs = defaultdict(list)
         logger.debug(f"[Template] get_vision_inputs: messages: {messages}")
         for message in messages:
             content = message["content"]
+            if content is None or isinstance(content, str):
+                continue
             if isinstance(content, list):
                 for item in content:
                     if item["type"] == "text":
@@ -493,7 +509,7 @@ class Template:
                         raise ValueError(f"Invalid message type: {item['type']}")
             else:
                 raise ValueError(
-                    f"Invalid message content: {content}, the content should be a list of dicts"
+                    f"Invalid message content: {content}, the content should be a string or a list of dicts"
                 )
         return vision_inputs
 
@@ -543,6 +559,7 @@ class Template:
         return self.__class__(
             name=self.name,
             system_template=self.system_template,
+            default_system_template=self.default_system_template,
             system_message=self.system_message,
             user_template=self.user_template,
             user_template_with_tools=self.user_template_with_tools,
@@ -574,6 +591,7 @@ class Template:
             "template_name": self.name,
             "system_message": self.system_message,
             "system_template": self.system_template,
+            "default_system_template": self.default_system_template,
             "tools_template": self.tools_template,
             "skills_template": self.skills_template,
             "stop_words": self.stop_words,
@@ -650,6 +668,16 @@ class HFTemplate(Template):
             messages, tools=tools, add_generation_prompt=add_generation_prompt, **kwargs
         )
 
+    def supports_vision(self) -> bool:
+        """Whether the underlying model is a vision-language model, read from its config.
+
+        HF templates are never in the vision-processor registry, so the base
+        registry lookup would report ``False`` even for VLMs.
+        """
+        from ..utils import is_vision_lm
+
+        return is_vision_lm(self.name)
+
     def encode(
         self,
         messages: List[Dict],
@@ -696,6 +724,11 @@ class HFTemplate(Template):
 
         # Handle BOS token if needed (same as base Template)
         if tokenizer_to_use.bos_token:
+            # BOS follows the tokenizer's ``add_bos_token``, which we expect to match
+            # ``apply_chat_template``: transformers>=5 sets it False when the chat
+            # template renders BOS itself. transformers<5 may leave it unset or True
+            # for such templates (e.g. Llama-3.x, DeepSeek-R1-Distill), which yields a
+            # duplicated BOS here.
             if getattr(tokenizer_to_use, "add_bos_token", True):
                 input_ids.append(tokenizer_to_use.bos_token_id)
                 attention_mask.append(1)

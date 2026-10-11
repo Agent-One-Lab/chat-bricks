@@ -413,7 +413,12 @@ class Renderer:
         else:
             system_message = self.template.system_message
 
-        return self._format_system_template(system_message, tools=tools, skills=skills)
+        return self._format_system_template(
+            system_message,
+            tools=tools,
+            skills=skills,
+            system_template=self.template.default_system_template,
+        )
 
     def _encode_system_message(self, content, tools=None, skills="") -> str:
         # Handle both string content and list content formats
@@ -432,12 +437,15 @@ class Renderer:
 
         return self._format_system_template(system_message, tools=tools, skills=skills)
 
-    def _format_system_template(self, system_message: str, tools=None, skills: str = "") -> str:
-        """Apply ``system_template``, passing ``tools=`` / ``skills=`` so templates
-        that opt in to the placeholders get them filled. ``str.format()`` silently
-        ignores extra kwargs, so templates without those placeholders are fine.
+    def _format_system_template(
+        self, system_message: str, tools=None, skills: str = "", system_template: str = None
+    ) -> str:
+        """Apply ``system_template`` (or the given override), passing ``tools=`` /
+        ``skills=`` so templates that opt in to the placeholders get them filled.
+        ``str.format()`` silently ignores extra kwargs, so templates without those
+        placeholders are fine.
         """
-        return self.template.system_template.format(
+        return (system_template or self.template.system_template).format(
             system_message=system_message,
             tools=tools if tools is not None else "",
             skills=skills,

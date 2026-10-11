@@ -3,6 +3,11 @@ from transformers import AutoTokenizer
 from chat_bricks import get_template
 from chat_bricks.utils import compare_hf_template
 
+# Templates that deliberately differ from their official chat template (qwen2.5-think
+# injects its own system prompt and ``<think>``), so only their Python and generated
+# Jinja renders are required to agree with each other.
+INTENTIONALLY_DIVERGENT = {"qwen2.5-think"}
+
 # nemotron, phi-4, glm-4
 @pytest.mark.parametrize("template_name", ["qwen2.5-think", "qwen2.5-no-system-tool",])
 @pytest.mark.parametrize("messages", [
@@ -64,5 +69,6 @@ def test_chat_template_equal(template_name, messages, tools, add_generation_prom
 
     print(f"Official prompt:\n\n\"{official_prompt}\"\n\n")
     print(f"Implemented prompt:\n\n\"{implemented_prompt}\"\n\n")
-    assert is_equal, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nOfficial prompt:\n\n{official_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}"
+    if template_name not in INTENTIONALLY_DIVERGENT:
+        assert is_equal, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nOfficial prompt:\n\n{official_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}"
     assert is_equal_between_jinja_prompts, f"Template: {template}\n\nMessages: {messages}\n\ntools: {tools}\n\nadd_generation_prompt: {add_generation_prompt}\n\nImplemented prompt:\n\n{implemented_prompt}\n\nJinja prompt:\n\n{implemented_jinja_prompt}"

@@ -65,15 +65,18 @@ class JinjaGenerator:
         # ``system_template`` may include ``{tools}`` / ``{skills}`` placeholders
         # (new section-template pattern); pass empty strings so the no-tools
         # default renders cleanly.
+        default_system_template = (
+            self.template.default_system_template or self.template.system_template
+        )
         if self.template.system_policy.content_processor is not None:
             processed_system_message = self.template.system_policy.content_processor(
                 self.template.system_message, tools=None
             )
-            default_system = self.template.system_template.format(
+            default_system = default_system_template.format(
                 system_message=processed_system_message, tools="", skills=""
             )
         else:
-            default_system = self.template.system_template.format(
+            default_system = default_system_template.format(
                 system_message=self.template.system_message, tools="", skills=""
             )
 
@@ -145,6 +148,7 @@ class JinjaGenerator:
             f"{{% set _default_system = {default_system!r} %}}",
             f"{{% set _system_message = {self.template.system_message!r} %}}",
             f"{{% set _system_template = {_unesc(self.template.system_template)!r} %}}",
+            f"{{% set _default_system_template = {_unesc(default_system_template)!r} %}}",
             f"{{% set _tool_placement = {self.template.tool_policy.placement.name!r} %}}",
             f"{{% set _supports_tool_calls = {supports_tool_calls_in_template} %}}",
             f"{{% set _uses_observations = {uses_observations} %}}",
@@ -386,16 +390,19 @@ class JinjaGenerator:
             "{% endif %}",
         ]
 
-        # Substitute system_message + the two section blocks into system_template.
-        render = [
-            "{% if _process_system_message is defined %}",
-            "{% set _processed_system = _process_system_message(_resolved_system_message) %}",
-            "{% else %}",
-            "{% set _processed_system = _resolved_system_message %}",
-            "{% endif %}",
-            "{% set _rendered_system = _system_template | replace('{system_message}', _processed_system) | replace('{tools}', _tools_block) | replace('{skills}', _skills_block) %}",
-            "{{ _rendered_system }}",
-        ]
+        # Substitute system_message + the two section blocks into the system template:
+        # ``_system_template`` for a supplied system message, ``_default_system_template``
+        # for the default one.
+        def render(system_template_var: str) -> List[str]:
+            return [
+                "{% if _process_system_message is defined %}",
+                "{% set _processed_system = _process_system_message(_resolved_system_message) %}",
+                "{% else %}",
+                "{% set _processed_system = _resolved_system_message %}",
+                "{% endif %}",
+                f"{{% set _rendered_system = {system_template_var} | replace('{{system_message}}', _processed_system) | replace('{{tools}}', _tools_block) | replace('{{skills}}', _skills_block) %}}",
+                "{{ _rendered_system }}",
+            ]
 
         return [
             *tools_block_setup,
@@ -406,10 +413,10 @@ class JinjaGenerator:
             "{% else %}",
             "{% set _resolved_system_message = messages[0]['content'][0]['text'] %}",
             "{% endif %}",
-            *render,
+            *render("_system_template"),
             "{% else %}",
             "{% set _resolved_system_message = _system_message %}",
-            *render,
+            *render("_default_system_template"),
             "{% endif %}",
         ]
 

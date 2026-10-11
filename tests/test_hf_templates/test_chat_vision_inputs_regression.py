@@ -6,7 +6,7 @@ def test_chat_text_only_still_probes_vision_model_capability():
 
     chat = Chat(template="Qwen/Qwen3.5-4B", messages=messages)
 
-    assert chat.is_vision_template is True
+    assert chat.use_list_content is True
 
 
 def test_chat_with_vision_content_probes_vision_model():
@@ -22,7 +22,7 @@ def test_chat_with_vision_content_probes_vision_model():
 
     chat = Chat(template="Qwen/Qwen3.5-4B", messages=messages)
 
-    assert chat.is_vision_template is True
+    assert chat.use_list_content is True
 
 
 def test_vision_inputs_text_only_returns_empty():
@@ -38,8 +38,7 @@ def test_vision_inputs_text_only_returns_empty():
     ]
 
     chat = Chat(template="Qwen/Qwen3.5-4B", messages=messages)
-    is_vision_template = chat.is_vision_template
-    assert is_vision_template is True
+    assert chat.use_list_content is True
 
     vision_inputs = chat.vision_inputs()
 

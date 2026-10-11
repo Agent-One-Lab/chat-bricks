@@ -89,6 +89,7 @@ def tokenize_conversation(
     return_tensors="pt",
     ignore_tool_calls=False,
     train_on_last_turn_only=False,
+    use_token_ids=True,
     **kwargs,  # Additional kwargs for the chat template, e.g. enable_thinking
 ):
     """
@@ -108,6 +109,8 @@ def tokenize_conversation(
         tools: The tools
         processor: The processor
         return_tensors: The return tensors
+        use_token_ids: Splice assistant messages' ``token_ids`` instead of re-encoding
+            their text (see ``Chat``). False re-encodes every turn from text.
         **kwargs: Additional kwargs for the chat template, e.g. enable_thinking
 
     Returns:
@@ -120,6 +123,7 @@ def tokenize_conversation(
         messages=messages,
         tokenizer=tokenizer,
         ignore_tool_calls=ignore_tool_calls,
+        use_token_ids=use_token_ids,
     )
     inputs = chat.tokenize(tokenizer, tools=tools, processor=processor, train_on_last_turn_only=train_on_last_turn_only, **kwargs)
 
@@ -146,6 +150,7 @@ def tokenize_conversations(
     concatenate_mm_inputs=False,
     ignore_tool_calls=False,
     train_on_last_turn_only=False,
+    use_token_ids=True,
     **kwargs,
 ):
     torch = _require_torch()
@@ -172,6 +177,7 @@ def tokenize_conversations(
             return_tensors=return_tensors,
             ignore_tool_calls=ignore_tool_calls,
             train_on_last_turn_only=train_on_last_turn_only,
+            use_token_ids=use_token_ids,
             **kwargs,
         )
         batch_input_ids.append(inputs["input_ids"].squeeze(0))

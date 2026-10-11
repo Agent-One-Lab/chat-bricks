@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chat-bricks"
-version = "0.1.4"
+version = "0.1.5"
 description = "A helper library for LLM/VLM chat templates."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ classifiers = [
 ]
 
 dependencies=[
-    "transformers",
+    "transformers>=5.0",
     "termcolor",
     "Pillow",
     "requests",

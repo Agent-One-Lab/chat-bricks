@@ -325,6 +325,12 @@ register_template(
     )
 )
 
+# DeepSeek-R1-Distill-Qwen — intended for single-turn use. Unlike the official
+# chat template, which strips everything up to ``</think>`` from every assistant
+# message, this template keeps assistant content verbatim, so the reasoning in the
+# (single) sampled response stays in the rendered/trained sequence. For multi-turn
+# conversations it also keeps the reasoning of earlier assistant turns, which the
+# model never sees at inference; don't use it for multi-turn reasoning data.
 register_template(
     Template(
         name="deepseek-r1-distill-qwen",
@@ -482,7 +488,10 @@ register_template(
         name="kimi-k2-instruct",
         # Kimi-K2 puts the tool catalogue BEFORE the system message block,
         # so the ``{tools}`` slot sits at the very start of ``system_template``.
-        system_template="{tools}<|im_system|>system<|im_middle|>{system_message}<|im_end|>\n",
+        # Only the default system turn is followed by a newline; a supplied system
+        # message is rendered like any other message, without one.
+        system_template="{tools}<|im_system|>system<|im_middle|>{system_message}<|im_end|>",
+        default_system_template="{tools}<|im_system|>system<|im_middle|>{system_message}<|im_end|>\n",
         tools_template="<|im_system|>tool_declare<|im_middle|>{tools}<|im_end|>",
         system_message="You are Kimi, an AI assistant created by Moonshot AI.",
         user_template="<|im_user|>user<|im_middle|>{content}<|im_end|>",

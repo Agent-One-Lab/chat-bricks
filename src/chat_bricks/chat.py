@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from .registry import get_template
 from .templates import HFTemplate, Template
-from .utils import is_vision_lm
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizer
@@ -25,6 +24,7 @@ class Chat:
         skills=None,
         tokenizer: PreTrainedTokenizer = None,
         ignore_tool_calls: bool = False,
+        use_token_ids: bool = True,
     ):
         """
         Args:
@@ -34,21 +34,26 @@ class Chat:
             skills: Optional list of skill objects/dicts to advertise via the template's
                 ``{skills}`` placeholder (requires ``skills_template`` on the template).
             tokenizer: The tokenizer to use for the chat.
+            ignore_tool_calls: Drop ``tool_calls`` from the messages.
+            use_token_ids: Splice an assistant message's ``token_ids`` (the ids the model
+                generated) into tokenization instead of re-encoding its text. When False,
+                ``token_ids`` are dropped and every turn is re-encoded from text.
         """
         if isinstance(template, str):
             self.template = get_template(template, tokenizer=tokenizer)
         else:
             self.template = template
 
-        # Default to use vision template because we use vision format messages by default.
-        # For HF template, detect model capability to decide whether to keep vision-format
-        # content blocks or convert text-only list blocks to plain strings.
+        # Message content format: a list of typed parts, or a plain string.
+        # chat-bricks templates always take list content. HF templates take list
+        # content only for vision-language models; text-only models keep strings.
         if isinstance(self.template, HFTemplate):
-            self.is_vision_template = is_vision_lm(self.template.name)
+            self.use_list_content = self.template.supports_vision()
         else:
-            self.is_vision_template = True
+            self.use_list_content = True
 
         self.ignore_tool_calls = ignore_tool_calls
+        self.use_token_ids = use_token_ids
         self.messages = self.preprocess_messages(messages)
         logger.debug(f"[chat-bricks/Chat] Messages: {self.messages}")
         self.tokenizer = tokenizer
@@ -85,11 +90,10 @@ class Chat:
 
     def _convert_single_message_to_hf_format(self, message: Dict) -> Dict:
         if isinstance(message["content"], str):
-            # Convert to vision format is we use defined template or HF's vision template.
-            if self.is_vision_template:
+            if self.use_list_content:
                 message["content"] = [{"type": "text", "text": message["content"]}]
         elif isinstance(message["content"], list):
-            if self.is_vision_template:
+            if self.use_list_content:
                 for item in message["content"]:
                     if item["type"] == "text":
                         continue
@@ -129,8 +133,9 @@ class Chat:
                 hf_message["reasoning_content"] = message["reasoning_content"]
             # Generated token ids must survive normalization too: tokenization
             # splices them for assistant turns to avoid retokenization drift.
-            # Dropping them here would silently fall back to re-encoding text.
-            if "token_ids" in message:
+            # Dropping them here falls back to re-encoding text, which is what
+            # ``use_token_ids=False`` asks for.
+            if self.use_token_ids and "token_ids" in message:
                 hf_message["token_ids"] = message["token_ids"]
             hf_messages.append(hf_message)
 
